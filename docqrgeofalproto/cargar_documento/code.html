@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DocQR - Upload New Document</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#2463eb",
+              "background-light": "#f6f6f8",
+              "background-dark": "#111621",
+            },
+            fontFamily: {
+              "display": ["Inter", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body class="font-display">
+<div class="relative flex min-h-screen w-full bg-background-light dark:bg-background-dark group/design-root overflow-x-hidden">
+<aside class="sticky top-0 flex h-screen flex-col border-r border-[#e7ebf3] dark:border-white/10 bg-white dark:bg-[#181e29] w-64 shrink-0">
+<div class="flex h-16 items-center gap-3 border-b border-[#e7ebf3] dark:border-white/10 px-6">
+<div class="size-8 text-primary">
+<svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M4 4H17.3334V17.3334H30.6666V30.6666H44V44H4V4Z" fill="currentColor"></path>
+</svg>
+</div>
+<h1 class="text-xl font-bold text-[#0e121b] dark:text-white">Geofal</h1>
+</div>
+<nav class="flex flex-1 flex-col gap-2 p-4">
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined !text-xl">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined !text-xl">folder</span>
+<span>Mis Documentos</span>
+</a>
+<a class="flex items-center gap-3 rounded-md bg-primary/10 px-4 py-2.5 text-sm font-bold text-primary dark:text-white dark:bg-primary/20" href="#">
+<span class="material-symbols-outlined !text-xl">qr_code_2</span>
+<span>Generar QR</span>
+</a>
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined !text-xl">layers</span>
+<span>Plantillas</span>
+</a>
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined !text-xl">analytics</span>
+<span>Analíticas</span>
+</a>
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined !text-xl">settings</span>
+<span>Configuración</span>
+</a>
+<a class="flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium text-[#4d6599] dark:text-white/60 hover:bg-primary/10 hover:text-primary dark:hover:text-white mt-auto" href="#">
+<span class="material-symbols-outlined !text-xl">help</span>
+<span>Ayuda</span>
+</a>
+<div class="flex items-center gap-3 border-t border-[#e7ebf3] dark:border-white/10 px-4 pt-4 mt-2">
+<div class="h-10 w-10 rounded-full bg-cover bg-center bg-no-repeat" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCe7eX_cfvT59soe0SUior9y77iIFNsBIlbm1emzKg-bvUIvmea30wFwCEYpI5Gas-IUd_pyHG6qT-affcDYrGEvOEIySLGI-M84fNzGuHuXQQYZnNOCnLZiWHu08-sMweQd-59EBpQvY6JFwtM3BSvftLpl6cyfiRZKr0Fgkh1rkmM2j47LUEh4MroiZC5hLqKzi-Cf81mK1-8j3yYxx9YrCGfAgTWOpZXnZ3vov4geL5zflTpNeZbuxlAdxTQqRhMtg58HOC1-jE");'></div>
+<div class="flex flex-col">
+<p class="text-sm font-medium text-[#0e121b] dark:text-white">John Doe</p>
+<p class="text-xs text-[#4d6599] dark:text-white/60">john.doe@geofal.com</p>
+</div>
+</div>
+</nav>
+</aside>
+<div class="flex flex-1 flex-col">
+<header class="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b border-[#e7ebf3] dark:border-white/10 bg-background-light/80 dark:bg-background-dark/80 px-4 sm:px-8 backdrop-blur-sm">
+<div class="flex items-center gap-4">
+<p class="text-[#0e121b] dark:text-white text-lg font-semibold leading-tight tracking-[-0.015em]">Generar Nuevo Documento QR</p>
+</div>
+<div class="flex items-center gap-4">
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-[#e7ebf3] text-[#0e121b] dark:bg-white/10 dark:text-white">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-[#e7ebf3] text-[#0e121b] dark:bg-white/10 dark:text-white md:hidden">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+</header>
+<main class="flex-1 p-4 sm:p-6 lg:p-8">
+<div class="mx-auto flex w-full max-w-4xl flex-col gap-8">
+<div class="flex flex-wrap justify-between gap-4">
+<div class="flex min-w-72 flex-col gap-2">
+<p class="text-[#0e121b] dark:text-white text-4xl font-black leading-tight tracking-[-0.033em]">Sube tu documento</p>
+<p class="text-[#4d6599] dark:text-white/60 text-base font-normal leading-normal">Añade un nuevo PDF para generar un código QR.</p>
+</div>
+</div>
+<div class="flex flex-col gap-6">
+<div class="flex flex-col">
+<div class="flex flex-col items-center gap-6 rounded-lg border-2 border-dashed border-[#d0d7e7] dark:border-white/20 px-6 py-14">
+<div class="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+<span class="material-symbols-outlined !text-3xl">upload_file</span>
+</div>
+<div class="flex max-w-[480px] flex-col items-center gap-2">
+<p class="text-center text-lg font-bold leading-tight tracking-[-0.015em] text-[#0e121b] dark:text-white">Arrastra y suelta tu archivo PDF aquí</p>
+<p class="text-center text-sm font-normal leading-normal text-[#0e121b] dark:text-white/70">o elige un archivo de tu computadora</p>
+</div>
+<button class="flex h-10 min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary px-4 text-sm font-bold leading-normal tracking-[0.015em] text-white">
+<span class="truncate">Seleccionar Archivo</span>
+</button>
+</div>
+</div>
+<div class="flex flex-col gap-4 rounded-lg border border-[#e7ebf3] dark:border-white/10 p-4">
+<div class="flex items-center gap-4 min-h-14 justify-between">
+<div class="flex items-center gap-4">
+<div class="text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+<span class="material-symbols-outlined !text-2xl">picture_as_pdf</span>
+</div>
+<p class="text-[#0e121b] dark:text-white text-base font-normal leading-normal flex-1 truncate">annual_report_2024.pdf</p>
+</div>
+<button class="shrink-0">
+<div class="text-[#0e121b] dark:text-white/70 flex h-7 w-7 items-center justify-center hover:text-red-500">
+<span class="material-symbols-outlined !text-2xl">close</span>
+</div>
+</button>
+</div>
+<div class="flex flex-col gap-2">
+<p class="text-[#0e121b] dark:text-white/80 text-sm font-medium leading-normal">Subiendo...</p>
+<div class="rounded-full bg-[#d0d7e7] dark:bg-white/10 h-2">
+<div class="h-2 rounded-full bg-primary" style="width: 75%;"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-6">
+<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+<div class="flex flex-col gap-2">
+<label class="text-sm font-medium text-[#0e121b] dark:text-white/80" for="doc-title">Título del Documento</label>
+<input class="h-10 rounded-lg border border-[#d0d7e7] dark:border-white/20 bg-white dark:bg-background-dark px-3 text-sm text-[#0e121b] dark:text-white placeholder:text-[#4d6599]/60 focus:border-primary focus:ring-primary" id="doc-title" placeholder="Ej: Reporte Financiero Anual 2024" type="text"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-medium text-[#0e121b] dark:text-white/80" for="doc-category">Categoría</label>
+<select class="h-10 rounded-lg border border-[#d0d7e7] dark:border-white/20 bg-white dark:bg-background-dark px-3 text-sm text-[#0e121b] dark:text-white focus:border-primary focus:ring-primary" id="doc-category">
+<option>Reportes Financieros</option>
+<option>Documentos Legales</option>
+<option>Material de Marketing</option>
+<option>Memos Internos</option>
+</select>
+</div>
+</div>
+<div class="flex flex-col items-center justify-end gap-3 border-t border-[#e7ebf3] dark:border-white/10 pt-6 sm:flex-row">
+<button class="flex h-10 w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-[#e7ebf3] px-4 text-sm font-bold leading-normal tracking-[0.015em] text-[#0e121b] dark:bg-white/10 dark:text-white/80 sm:w-auto">
+<span class="truncate">Cancelar</span>
+</button>
+<button class="flex h-10 w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-primary px-4 text-sm font-bold leading-normal tracking-[0.015em] text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto" disabled="">
+<span class="truncate">Generar QR y Guardar</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+</body></html>

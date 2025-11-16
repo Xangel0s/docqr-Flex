@@ -1,0 +1,76 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 overflow-y-auto p-8">
+      <div class="mx-auto max-w-4xl">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex flex-col gap-1">
+            <h1 class="text-4xl font-black leading-tight tracking-tight text-gray-900">Centro de Ayuda</h1>
+            <p class="text-base font-normal leading-normal text-gray-600">Encuentra respuestas y tutoriales para empezar a usar DocQR.</p>
+          </div>
+        </div>
+
+        <div class="mt-10 flex flex-col gap-12">
+          <!-- Preguntas Frecuentes -->
+          <div>
+            <h2 class="px-1 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-tight text-gray-900">Preguntas Frecuentes</h2>
+            <div class="flex flex-col rounded-xl border border-gray-200 bg-white p-2">
+              <details class="flex flex-col border-b border-gray-200 py-2 group" open>
+                <summary class="flex cursor-pointer items-center justify-between gap-4 p-2">
+                  <p class="text-sm font-medium leading-normal text-gray-900">¿Cómo puedo empezar a usar DocQR?</p>
+                  <span class="material-symbols-outlined text-gray-600 transition-transform group-open:rotate-180">expand_more</span>
+                </summary>
+                <p class="px-2 pb-2 text-sm font-normal leading-normal text-gray-600">Para comenzar, simplemente navega a la sección 'Documentos' y haz clic en 'Subir Documento'. Nuestro sistema te guiará para embeber un código QR y configurar tus archivos.</p>
+              </details>
+              <details class="flex flex-col border-b border-gray-200 py-2 group">
+                <summary class="flex cursor-pointer items-center justify-between gap-4 p-2">
+                  <p class="text-sm font-medium leading-normal text-gray-900">¿Cómo se gestionan los códigos QR?</p>
+                  <span class="material-symbols-outlined text-gray-600 transition-transform group-open:rotate-180">expand_more</span>
+                </summary>
+                <p class="px-2 pb-2 text-sm font-normal leading-normal text-gray-600">El sistema genera y embebe automáticamente un código QR único para cada documento que subas. Puedes gestionar y rastrear cada código desde el panel de 'Documentos'.</p>
+              </details>
+              <details class="flex flex-col py-2 group">
+                <summary class="flex cursor-pointer items-center justify-between gap-4 p-2">
+                  <p class="text-sm font-medium leading-normal text-gray-900">¿Puedo consultar las analíticas?</p>
+                  <span class="material-symbols-outlined text-gray-600 transition-transform group-open:rotate-180">expand_more</span>
+                </summary>
+                <p class="px-2 pb-2 text-sm font-normal leading-normal text-gray-600">Sí, la sección de 'Analíticas' te ofrece datos detallados sobre las visualizaciones, descargas y escaneos de los códigos QR de tus documentos.</p>
+              </details>
+            </div>
+          </div>
+
+          <!-- Tutoriales en Vídeo -->
+          <div>
+            <h2 class="px-1 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-tight text-gray-900">Tutoriales en Vídeo</h2>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <a class="group flex flex-col gap-3" href="#">
+                <div class="relative overflow-hidden rounded-lg aspect-video bg-gray-200 flex items-center justify-center">
+                  <span class="material-symbols-outlined text-6xl text-gray-400">play_circle</span>
+                </div>
+                <div>
+                  <h3 class="font-medium text-gray-900">Subir tu primer documento</h3>
+                  <p class="text-sm text-gray-600">Aprende a cargar y configurar tu PDF.</p>
+                </div>
+              </a>
+              <a class="group flex flex-col gap-3" href="#">
+                <div class="relative overflow-hidden rounded-lg aspect-video bg-gray-200 flex items-center justify-center">
+                  <span class="material-symbols-outlined text-6xl text-gray-400">play_circle</span>
+                </div>
+                <div>
+                  <h3 class="font-medium text-gray-900">Entendiendo las analíticas</h3>
+                  <p class="text-sm text-gray-600">Saca el máximo partido a tus datos.</p>
+                </div>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

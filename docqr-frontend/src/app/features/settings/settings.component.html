@@ -1,0 +1,140 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 p-6 sm:p-8 lg:p-10">
+      <div class="mx-auto max-w-4xl">
+        <header class="mb-8">
+          <h1 class="text-4xl font-black leading-tight tracking-tight text-gray-900">Configuración</h1>
+          <p class="text-base font-normal leading-normal mt-2 text-gray-600">Gestiona la configuración de tu perfil y del espacio de trabajo.</p>
+        </header>
+
+        <section class="flex flex-col gap-8">
+          <!-- Perfil de Usuario -->
+          <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6">
+            <div class="flex w-full flex-col gap-4 md:flex-row md:justify-between md:items-center">
+              <div class="flex gap-4 items-center">
+                <div class="h-24 w-24 rounded-full bg-primary flex items-center justify-center text-white text-3xl font-bold">
+                  A
+                </div>
+                <div class="flex flex-col justify-center">
+                  <p class="text-xl font-bold leading-tight text-gray-900">Administrador</p>
+                  <p class="text-base font-normal leading-normal text-gray-600">Administrador</p>
+                </div>
+              </div>
+              <button class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-200 text-gray-900 text-sm font-bold leading-normal tracking-[0.015em] w-full max-w-[480px] md:w-auto hover:bg-gray-300">
+                <span class="truncate">Cambiar foto</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Formulario de Perfil -->
+          <div class="flex flex-col gap-6 rounded-xl border border-gray-200 bg-white p-6">
+            <h3 class="text-lg font-bold text-gray-900">Perfil de Usuario</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <label class="flex flex-col flex-1">
+                <p class="text-gray-900 text-sm font-medium leading-normal pb-2">Nombre Completo *</p>
+                <input 
+                  [(ngModel)]="fullName"
+                  (input)="onProfileChange()"
+                  class="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-gray-200 bg-gray-50 h-12 placeholder:text-gray-400 p-3 text-base font-normal leading-normal" 
+                  placeholder="Ingrese su nombre completo"
+                  type="text"
+                  required/>
+              </label>
+              <label class="flex flex-col flex-1">
+                <p class="text-gray-900 text-sm font-medium leading-normal pb-2">Correo Electrónico</p>
+                <input 
+                  class="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-400 focus:outline-0 border border-gray-200 bg-gray-50/50 h-12 p-3 text-base font-normal leading-normal cursor-not-allowed" 
+                  readonly 
+                  value="admin@docqr.com"/>
+              </label>
+            </div>
+            <div class="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <button 
+                type="button"
+                (click)="cancelProfile()"
+                [disabled]="!profileFormChanged || savingProfile"
+                class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-200 text-gray-900 text-sm font-bold leading-normal hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="truncate">Cancelar</span>
+              </button>
+              <button 
+                type="button"
+                (click)="saveProfile()"
+                [disabled]="!profileFormChanged || !isProfileValid() || savingProfile"
+                class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                <span class="truncate" *ngIf="!savingProfile">Guardar Cambios</span>
+                <span class="truncate" *ngIf="savingProfile">Guardando...</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cambiar Contraseña -->
+          <div class="flex flex-col gap-6 rounded-xl border border-gray-200 bg-white p-6">
+            <h3 class="text-lg font-bold text-gray-900">Cambiar Contraseña</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <label class="flex flex-col flex-1">
+                <p class="text-gray-900 text-sm font-medium leading-normal pb-2">Contraseña Actual *</p>
+                <input 
+                  [(ngModel)]="currentPassword"
+                  (input)="onPasswordChange()"
+                  class="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-gray-200 bg-gray-50 h-12 placeholder:text-gray-400 p-3 text-base font-normal leading-normal" 
+                  placeholder="••••••••" 
+                  type="password"
+                  required/>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <label class="flex flex-col flex-1">
+                <p class="text-gray-900 text-sm font-medium leading-normal pb-2">Nueva Contraseña *</p>
+                <input 
+                  [(ngModel)]="newPassword"
+                  (input)="onPasswordChange()"
+                  class="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-gray-200 bg-gray-50 h-12 placeholder:text-gray-400 p-3 text-base font-normal leading-normal" 
+                  placeholder="Mínimo 6 caracteres" 
+                  type="password"
+                  minlength="6"
+                  required/>
+              </label>
+              <label class="flex flex-col flex-1">
+                <p class="text-gray-900 text-sm font-medium leading-normal pb-2">Confirmar Contraseña *</p>
+                <input 
+                  [(ngModel)]="confirmPassword"
+                  (input)="onPasswordChange()"
+                  class="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-gray-200 bg-gray-50 h-12 placeholder:text-gray-400 p-3 text-base font-normal leading-normal" 
+                  placeholder="Confirme la nueva contraseña" 
+                  type="password"
+                  required/>
+                <p *ngIf="newPassword && confirmPassword && newPassword !== confirmPassword" class="text-red-500 text-xs mt-1">
+                  Las contraseñas no coinciden
+                </p>
+              </label>
+            </div>
+            <div class="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <button 
+                type="button"
+                (click)="cancelPassword()"
+                [disabled]="!passwordFormChanged || changingPassword"
+                class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-200 text-gray-900 text-sm font-bold leading-normal hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="truncate">Cancelar</span>
+              </button>
+              <button 
+                type="button"
+                (click)="updatePassword()"
+                [disabled]="!passwordFormChanged || !isPasswordValid() || changingPassword"
+                class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                <span class="truncate" *ngIf="!changingPassword">Actualizar Contraseña</span>
+                <span class="truncate" *ngIf="changingPassword">Actualizando...</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>

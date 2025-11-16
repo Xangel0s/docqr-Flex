@@ -1,0 +1,208 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 overflow-y-auto p-6">
+      <!-- Header del Editor -->
+      <div class="mb-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h1 class="text-3xl font-bold text-gray-900">Editor de PDF</h1>
+            <p class="text-base text-gray-600 mt-1">
+              Arrastra y ajusta el tamaño del código QR sobre el documento
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button 
+              type="button"
+              (click)="cancel()"
+              [disabled]="saving"
+              class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+              <span class="material-symbols-outlined text-lg mr-2 align-middle">close</span>
+              Cancelar
+            </button>
+            <button 
+              type="button"
+              (click)="savePosition()"
+              [disabled]="saving || loading"
+              class="btn-primary">
+              <span *ngIf="saving" class="material-symbols-outlined text-lg mr-2 animate-spin align-middle">sync</span>
+              <span *ngIf="!saving" class="material-symbols-outlined text-lg mr-2 align-middle">save</span>
+              {{ saving ? 'Guardando...' : 'Guardar Posición' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Información del Documento -->
+        <div *ngIf="document" class="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div class="flex flex-wrap items-center gap-4 text-sm">
+            <div>
+              <span class="text-gray-500">Documento:</span>
+              <span class="font-medium text-gray-900 ml-2">{{ document.original_filename }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">Código:</span>
+              <span class="font-medium text-gray-900 ml-2">{{ document.folder_name }}</span>
+            </div>
+            <div *ngIf="getQrInfo()">
+              <span class="text-gray-500">Tamaño del QR:</span>
+              <span class="font-medium text-gray-900 ml-2">{{ getQrInfo()?.size }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contenedor Principal: PDF y Sidebar -->
+      <div class="flex flex-col lg:flex-row gap-6">
+        <!-- Contenedor del PDF y QR -->
+        <div class="flex-1 bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+          <!-- Loading -->
+          <div *ngIf="loading" class="flex flex-col items-center justify-center py-20">
+            <span class="material-symbols-outlined text-6xl text-gray-300 mb-4 animate-spin">sync</span>
+            <p class="text-gray-600 font-medium">Cargando documento...</p>
+          </div>
+
+          <!-- Error -->
+          <div *ngIf="!loading && !pdfUrl" class="flex flex-col items-center justify-center py-20">
+            <span class="material-symbols-outlined text-6xl text-red-300 mb-4">error_outline</span>
+            <p class="text-gray-600 font-medium">Error al cargar el PDF</p>
+            <button 
+              type="button"
+              (click)="loadDocument()"
+              class="mt-4 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90">
+              Reintentar
+            </button>
+          </div>
+
+          <!-- Visor de PDF con QR usando Arquitectura de Doble Canvas (iLovePDF) -->
+          <!-- Los canvas deben estar siempre en el DOM para que ViewChild los encuentre -->
+          <div 
+            class="relative"
+            [style.display]="(!loading && pdfUrl) ? 'block' : 'none'">
+            
+            <!-- Contenedor del Canvas -->
+            <div 
+              #canvasContainer
+              class="relative bg-gray-100 rounded-lg overflow-auto border-2 border-gray-300 mx-auto"
+              style="max-width: 100%; max-height: 80vh; display: flex; justify-content: center; align-items: flex-start;">
+              
+              <!-- Contenedor para el canvas único de Fabric.js -->
+              <div 
+                class="relative" 
+                style="position: relative; display: inline-block; width: 595px; height: 842px;">
+                <!-- Canvas único: Fabric.js con PDF como fondo y QR como objeto interactivo -->
+                <canvas 
+                  #fabricCanvas
+                  style="display: block; background-color: white; width: 595px; height: 842px;">
+                </canvas>
+              </div>
+            </div>
+
+            <!-- Instrucciones -->
+            <div class="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-blue-600 text-xl">info</span>
+                <div class="flex-1">
+                  <p class="text-sm font-medium text-blue-900 mb-1">Instrucciones:</p>
+                  <ul class="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                    <li>Arrastra el código QR para moverlo sobre el documento</li>
+                    <li>Arrastra el círculo azul en la esquina inferior derecha para cambiar el tamaño</li>
+                    <li>Asegúrate de que el QR esté completamente dentro del documento</li>
+                    <li>Haz clic en "Guardar Posición" cuando estés satisfecho con la ubicación</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar Derecho con Acciones -->
+        <div class="w-full lg:w-80 bg-white rounded-xl shadow-lg border border-gray-200 p-6 h-fit lg:sticky lg:top-6">
+          <h2 class="text-lg font-bold text-gray-900 mb-4">Acciones Rápidas</h2>
+          
+          <div class="space-y-3">
+            <!-- Copiar URL del QR -->
+            <button 
+              type="button"
+              (click)="copyQrUrl()"
+              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-gray-600">link</span>
+                <span class="text-sm font-medium text-gray-700">Copiar URL del QR</span>
+              </div>
+              <span class="material-symbols-outlined text-gray-400 text-lg">content_copy</span>
+            </button>
+
+            <!-- Descargar QR Solo -->
+            <button 
+              type="button"
+              (click)="downloadQrImage()"
+              [disabled]="!qrImageUrl"
+              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-gray-600">qr_code</span>
+                <span class="text-sm font-medium text-gray-700">Descargar QR</span>
+              </div>
+              <span class="material-symbols-outlined text-gray-400 text-lg">download</span>
+            </button>
+
+            <!-- Descargar PDF con QR -->
+            <button 
+              type="button"
+              (click)="downloadPdfWithQr()"
+              [disabled]="!pdfUrl || !document?.final_pdf_url || document?.status !== 'completed'"
+              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-primary bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined">picture_as_pdf</span>
+                <span class="text-sm font-medium">Descargar PDF con QR</span>
+              </div>
+              <span class="material-symbols-outlined text-lg">download</span>
+            </button>
+
+            <!-- Mensaje si no está guardado -->
+            <div *ngIf="document?.status !== 'completed'" class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p class="text-xs text-yellow-800">
+                <span class="material-symbols-outlined text-sm align-middle">info</span>
+                Guarda la posición del QR para descargar el PDF final
+              </p>
+            </div>
+            
+            <!-- Mensaje si está guardado pero aún no hay final_pdf_url -->
+            <div *ngIf="document?.status === 'completed' && !document?.final_pdf_url" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-xs text-blue-800">
+                <span class="material-symbols-outlined text-sm align-middle">sync</span>
+                Procesando PDF... Espera unos segundos y recarga la página.
+              </p>
+            </div>
+          </div>
+
+          <!-- Información del QR -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-sm font-semibold text-gray-900 mb-3">Información del QR</h3>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between">
+                <span class="text-gray-500">URL del QR:</span>
+                <span class="text-gray-900 font-mono text-xs truncate max-w-[200px]" [title]="document?.qr_url">
+                  {{ document?.qr_url || 'N/A' }}
+                </span>
+              </div>
+              <div *ngIf="getQrInfo()" class="flex justify-between">
+                <span class="text-gray-500">Tamaño:</span>
+                <span class="text-gray-900 font-medium">{{ getQrInfo()?.size }}</span>
+              </div>
+              <div *ngIf="getQrInfo()" class="flex justify-between">
+                <span class="text-gray-500">Posición:</span>
+                <span class="text-gray-900 font-medium">{{ getQrInfo()?.position }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

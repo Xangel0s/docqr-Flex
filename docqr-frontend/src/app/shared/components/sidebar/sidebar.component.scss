@@ -1,0 +1,13 @@
+// Estilos específicos del sidebar
+aside {
+  // Asegurar que el sidebar esté por encima del contenido en móvil
+  @media (max-width: 767px) {
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  // En desktop, siempre visible
+  @media (min-width: 768px) {
+    transform: translateX(0) !important;
+  }
+}
+

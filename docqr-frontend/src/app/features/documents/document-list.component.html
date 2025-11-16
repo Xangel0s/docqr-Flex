@@ -1,0 +1,355 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 overflow-y-auto p-6 space-y-6">
+      <!-- Cards de Estadísticas -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="bg-white p-5 rounded-xl shadow-sm flex items-center gap-4">
+          <div class="p-3 rounded-full bg-primary bg-opacity-10">
+            <span class="material-symbols-outlined text-primary text-2xl">description</span>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Total Documentos</p>
+            <p class="text-2xl font-bold text-gray-900">{{ stats.total }}</p>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm flex items-center gap-4">
+          <div class="p-3 rounded-full bg-green-500 bg-opacity-10">
+            <span class="material-symbols-outlined text-green-500 text-2xl">qr_code_scanner</span>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Escaneos Totales</p>
+            <p class="text-2xl font-bold text-gray-900">{{ stats.totalScans }}</p>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm flex items-center gap-4">
+          <div class="p-3 rounded-full bg-red-500 bg-opacity-10">
+            <span class="material-symbols-outlined text-red-500 text-2xl">error_outline</span>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Errores de Escaneo</p>
+            <p class="text-2xl font-bold text-gray-900">{{ stats.errors }}</p>
+          </div>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm flex items-center gap-4">
+          <div class="p-3 rounded-full bg-yellow-500 bg-opacity-10">
+            <span class="material-symbols-outlined text-yellow-500 text-2xl">pending</span>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500">Pendientes</p>
+            <p class="text-2xl font-bold text-gray-900">{{ stats.pending }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla de Documentos -->
+      <div class="bg-white rounded-xl shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 p-6">
+          <div class="relative w-full md:w-72">
+            <input 
+              [(ngModel)]="searchTerm"
+              (keyup.enter)="onSearch()"
+              class="w-full rounded-lg border border-gray-300 bg-gray-50 h-11 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" 
+              placeholder="Buscar por código o nombre de archivo..." 
+              type="text"/>
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button 
+              type="button"
+              (click)="onFilter()"
+              class="relative flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-gray-300 bg-white text-sm font-semibold hover:bg-gray-50 transition-colors">
+              <span class="material-symbols-outlined">filter_list</span>
+              <span>Filtrar</span>
+              <span *ngIf="activeFiltersCount > 0" class="absolute -top-1 -right-1 h-5 w-5 bg-primary text-white text-xs font-bold rounded-full flex items-center justify-center">
+                {{ activeFiltersCount }}
+              </span>
+            </button>
+            <button 
+              routerLink="/upload"
+              class="flex items-center justify-center gap-2 h-11 px-4 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors">
+              <span class="material-symbols-outlined">add</span>
+              <span>Nuevo Documento</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Panel de Filtros -->
+        <div *ngIf="showFilters" class="border-t border-gray-200 p-6 bg-gray-50">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+            <!-- Filtro por Tipo -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Documento</label>
+              <select 
+                [(ngModel)]="filters.type"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                <option value="all">Todos</option>
+                <option value="CE">Certificado (CE)</option>
+                <option value="IN">Informe de Ensayo (IN)</option>
+                <option value="SU">Suplemento (SU)</option>
+              </select>
+            </div>
+
+            <!-- Filtro por Estado -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Estado</label>
+              <select 
+                [(ngModel)]="filters.status"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                <option value="all">Todos</option>
+                <option value="completed">Completados</option>
+                <option value="uploaded">Pendientes</option>
+              </select>
+            </div>
+
+            <!-- Filtro por Escaneos -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Escaneos</label>
+              <select 
+                [(ngModel)]="filters.scansFilter"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                <option value="all">Todos</option>
+                <option value="none">Sin escaneos</option>
+                <option value="with_scans">Con escaneos</option>
+              </select>
+            </div>
+
+            <!-- Filtro por Fecha Desde -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Fecha Desde</label>
+              <input 
+                type="date"
+                [(ngModel)]="filters.dateFrom"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+            </div>
+
+            <!-- Filtro por Fecha Hasta -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Fecha Hasta</label>
+              <input 
+                type="date"
+                [(ngModel)]="filters.dateTo"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+            </div>
+
+            <!-- Ordenamiento -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Ordenar por</label>
+              <select 
+                [(ngModel)]="filters.sortBy"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
+                <option value="created_at">Fecha de Creación</option>
+                <option value="original_filename">Nombre de Archivo</option>
+                <option value="scan_count">Cantidad de Escaneos</option>
+                <option value="folder_name">Código</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Orden -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Orden</label>
+            <div class="flex gap-2">
+              <button 
+                type="button"
+                (click)="filters.sortOrder = 'desc'"
+                [class.bg-primary]="filters.sortOrder === 'desc'"
+                [class.text-white]="filters.sortOrder === 'desc'"
+                [class.bg-gray-200]="filters.sortOrder !== 'desc'"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                Descendente
+              </button>
+              <button 
+                type="button"
+                (click)="filters.sortOrder = 'asc'"
+                [class.bg-primary]="filters.sortOrder === 'asc'"
+                [class.text-white]="filters.sortOrder === 'asc'"
+                [class.bg-gray-200]="filters.sortOrder !== 'asc'"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                Ascendente
+              </button>
+            </div>
+          </div>
+
+          <!-- Botones de Acción -->
+          <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+            <button 
+              type="button"
+              (click)="clearFilters()"
+              class="text-sm text-gray-600 hover:text-gray-900 underline">
+              Limpiar todos los filtros
+            </button>
+            <div class="flex gap-3">
+              <button 
+                type="button"
+                (click)="showFilters = false"
+                class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                (click)="applyFilters()"
+                class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90">
+                Aplicar Filtros
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chips de Filtros Activos -->
+        <div *ngIf="activeFiltersCount > 0 && !showFilters" class="px-6 pt-4 pb-2 flex flex-wrap gap-2">
+          <span 
+            *ngIf="filters.type !== 'all'"
+            class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
+            Tipo: {{ filters.type === 'CE' ? 'Certificado' : filters.type === 'IN' ? 'Informe' : 'Suplemento' }}
+            <button type="button" (click)="clearFilter('type')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+              <span class="material-symbols-outlined text-xs">close</span>
+            </button>
+          </span>
+          <span 
+            *ngIf="filters.status !== 'all'"
+            class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
+            Estado: {{ filters.status === 'completed' ? 'Completados' : 'Pendientes' }}
+            <button type="button" (click)="clearFilter('status')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+              <span class="material-symbols-outlined text-xs">close</span>
+            </button>
+          </span>
+          <span 
+            *ngIf="filters.scansFilter !== 'all'"
+            class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
+            Escaneos: {{ filters.scansFilter === 'none' ? 'Sin escaneos' : 'Con escaneos' }}
+            <button type="button" (click)="clearFilter('scansFilter')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+              <span class="material-symbols-outlined text-xs">close</span>
+            </button>
+          </span>
+          <span 
+            *ngIf="filters.dateFrom"
+            class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
+            Desde: {{ filters.dateFrom }}
+            <button type="button" (click)="clearFilter('dateFrom')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+              <span class="material-symbols-outlined text-xs">close</span>
+            </button>
+          </span>
+          <span 
+            *ngIf="filters.dateTo"
+            class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
+            Hasta: {{ filters.dateTo }}
+            <button type="button" (click)="clearFilter('dateTo')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+              <span class="material-symbols-outlined text-xs">close</span>
+            </button>
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs text-gray-500 uppercase bg-gray-50">
+              <tr>
+                <th class="p-4 rounded-l-lg" scope="col">Acción</th>
+                <th class="p-4" scope="col">Tipo Documento</th>
+                <th class="p-4" scope="col">Código</th>
+                <th class="p-4" scope="col">Nombre Archivo Original</th>
+                <th class="p-4" scope="col">Usuario Creación</th>
+                <th class="p-4 rounded-r-lg" scope="col">Fecha Creación</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="loading">
+                <td colspan="6" class="p-8 text-center text-gray-500">
+                  Cargando documentos...
+                </td>
+              </tr>
+              <tr *ngIf="!loading && documents.length === 0">
+                <td colspan="6" class="p-8 text-center text-gray-500">
+                  No hay documentos aún. 
+                  <button 
+                    type="button"
+                    routerLink="/upload"
+                    class="text-primary hover:underline font-medium ml-1">
+                    Sube tu primer documento
+                  </button>
+                </td>
+              </tr>
+              <tr *ngFor="let doc of documents" class="border-b border-gray-200 hover:bg-gray-50">
+                <td class="p-4">
+                  <div class="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      (click)="viewDocument(doc)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
+                      title="Ver documento">
+                      <span class="material-symbols-outlined text-gray-600 text-lg">visibility</span>
+                    </button>
+                    <button 
+                      type="button"
+                      (click)="editDocument(doc)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
+                      title="Editar documento">
+                      <span class="material-symbols-outlined text-gray-600 text-lg">edit</span>
+                    </button>
+                    <button 
+                      type="button"
+                      (click)="copyLink(doc)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
+                      title="Copiar enlace del QR">
+                      <span class="material-symbols-outlined text-gray-600 text-lg">link</span>
+                    </button>
+                    <button 
+                      *ngIf="doc.final_pdf_url || doc.pdf_url"
+                      type="button"
+                      (click)="downloadDocument(doc)"
+                      class="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 transition-colors"
+                      title="Descargar PDF">
+                      <span class="material-symbols-outlined text-blue-600 text-lg">download</span>
+                    </button>
+                    <button 
+                      type="button"
+                      (click)="deleteDocument(doc)"
+                      class="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 transition-colors"
+                      title="Eliminar documento">
+                      <span class="material-symbols-outlined text-red-600 text-lg">delete</span>
+                    </button>
+                  </div>
+                </td>
+                <td class="p-4 text-gray-500">{{ getDocumentType(doc.folder_name) }}</td>
+                <td class="p-4 font-semibold text-gray-900">{{ doc.folder_name }}</td>
+                <td class="p-4 text-gray-500">{{ doc.original_filename }}</td>
+                <td class="p-4 text-gray-500">Administrador</td>
+                <td class="p-4 text-gray-500">{{ formatDate(doc.created_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex items-center justify-between pt-5 p-6 text-sm border-t border-gray-200">
+          <span class="text-gray-500">
+            Mostrando {{ documents.length }} de {{ totalDocuments }}
+          </span>
+          <div class="flex items-center gap-2">
+            <button 
+              type="button"
+              (click)="changePage(currentPage - 1)"
+              [disabled]="currentPage === 1"
+              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+              Anterior
+            </button>
+            <span class="px-3 py-1.5 text-gray-700">
+              Página {{ currentPage }} de {{ totalPages }}
+            </span>
+            <button 
+              type="button"
+              (click)="changePage(currentPage + 1)"
+              [disabled]="currentPage === totalPages"
+              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>

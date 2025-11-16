@@ -1,0 +1,196 @@
+<div class="min-h-screen bg-background-light flex">
+  <!-- Sidebar -->
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <!-- Contenido principal -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 container mx-auto px-4 py-8 max-w-7xl">
+    <!-- Título -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+      <div class="flex flex-col gap-1">
+        <h1 class="text-3xl font-bold text-gray-900">Dashboard Principal</h1>
+        <p class="text-base text-gray-600">Bienvenido, aquí tienes un resumen del rendimiento de tus documentos.</p>
+      </div>
+      <div class="flex gap-3">
+        <button 
+          type="button"
+          (click)="refreshStats()"
+          class="btn-secondary"
+          [disabled]="loading">
+          <span class="material-symbols-outlined text-lg mr-2">refresh</span>
+          Actualizar
+        </button>
+        <button 
+          type="button"
+          routerLink="/upload"
+          class="btn-primary">
+          <span class="material-symbols-outlined text-lg mr-2">add</span>
+          Nuevo Documento
+        </button>
+      </div>
+    </div>
+
+    <!-- Mensaje de Error -->
+    <div *ngIf="error && !loading" class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+      <span class="material-symbols-outlined text-red-600">error</span>
+      <div class="flex-1">
+        <p class="text-sm font-medium text-red-900">Error al cargar estadísticas</p>
+        <p class="text-xs text-red-700 mt-1">{{ errorMessage }}</p>
+        <button 
+          type="button"
+          (click)="loadStats()"
+          class="mt-2 text-xs text-red-600 hover:text-red-800 underline">
+          Intentar de nuevo
+        </button>
+      </div>
+    </div>
+
+    <!-- Cards de Estadísticas -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <!-- Total de Escaneos -->
+      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+        <p class="text-base font-medium text-gray-600 mb-2">Total de Escaneos</p>
+        <p class="text-3xl font-bold text-gray-900 mb-1">
+          {{ loading ? '...' : formatNumber(stats?.total_scans || 0) }}
+        </p>
+        <p class="text-sm font-medium text-gray-400">Total acumulado</p>
+      </div>
+
+      <!-- Documentos Activos -->
+      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+        <p class="text-base font-medium text-gray-600 mb-2">Documentos Activos</p>
+        <p class="text-3xl font-bold text-gray-900 mb-1">
+          {{ loading ? '...' : formatNumber(stats?.completed_documents || 0) }}
+        </p>
+        <p class="text-sm font-medium text-gray-400">Con QR embebido</p>
+      </div>
+
+      <!-- Escaneos (30 días) -->
+      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+        <p class="text-base font-medium text-gray-600 mb-2">Escaneos (30 días)</p>
+        <p class="text-3xl font-bold text-gray-900 mb-1">
+          {{ loading ? '...' : formatNumber(stats?.scans_last_30_days || 0) }}
+        </p>
+        <p class="text-sm font-medium text-gray-400">Último mes</p>
+      </div>
+
+      <!-- Total Documentos -->
+      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+        <p class="text-base font-medium text-gray-600 mb-2">Total Documentos</p>
+        <p class="text-3xl font-bold text-gray-900 mb-1">
+          {{ loading ? '...' : formatNumber(stats?.total_documents || 0) }}
+        </p>
+        <p class="text-sm font-medium text-gray-400">Total</p>
+      </div>
+    </div>
+
+    <!-- Gráficos y Tabla -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <!-- Gráfico de Actividad -->
+      <div class="bg-white rounded-xl border border-gray-200 p-6 lg:col-span-3 shadow-sm">
+        <p class="text-base font-semibold text-gray-900 mb-4">Actividad de Escaneos en el Tiempo</p>
+        <div class="flex items-baseline gap-2 mb-4">
+          <p class="text-3xl font-bold text-gray-900">
+            {{ loading ? '...' : formatNumber(stats?.total_scans || 0) }} Escaneos
+          </p>
+          <p class="text-sm font-medium text-gray-400">Total histórico</p>
+        </div>
+        <div class="h-64 flex flex-col items-center justify-center bg-gray-50 rounded-lg">
+          <span *ngIf="loading" class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
+          <p *ngIf="loading" class="text-gray-500">Cargando datos...</p>
+          
+          <span *ngIf="!loading && error" class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
+          <p *ngIf="!loading && error" class="text-red-500 font-medium">Error al cargar</p>
+          <p *ngIf="!loading && error" class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          
+          <span *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="material-symbols-outlined text-4xl text-gray-300 mb-2">bar_chart</span>
+          <p *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="text-gray-500">Sin datos de escaneos</p>
+          <p *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="text-xs text-gray-400 mt-1">Los gráficos aparecerán cuando haya actividad</p>
+        </div>
+      </div>
+
+      <!-- Top 5 Documentos -->
+      <div class="bg-white rounded-xl border border-gray-200 p-6 lg:col-span-2 shadow-sm">
+        <p class="text-base font-semibold text-gray-900 mb-4">Top 5 Documentos</p>
+        <div class="flex items-baseline gap-2 mb-4">
+          <p class="text-3xl font-bold text-gray-900">
+            {{ loading ? '...' : formatNumber(stats?.completed_documents || 0) }} Activos
+          </p>
+          <p class="text-sm font-medium text-gray-400">Documentos activos</p>
+        </div>
+        <div class="h-64 flex flex-col items-center justify-center bg-gray-50 rounded-lg">
+          <span *ngIf="loading" class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
+          <p *ngIf="loading" class="text-gray-500">Cargando documentos...</p>
+          
+          <span *ngIf="!loading && error" class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
+          <p *ngIf="!loading && error" class="text-red-500 font-medium">Error al cargar</p>
+          <p *ngIf="!loading && error" class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          
+          <span *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="material-symbols-outlined text-4xl text-gray-300 mb-2">description</span>
+          <p *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="text-gray-500">Sin documentos recientes</p>
+          <p *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="text-xs text-gray-400 mt-1">Sube documentos para ver el ranking</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla de Actividad por Carpeta -->
+    <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="p-6 border-b border-gray-200">
+        <h2 class="text-xl font-bold text-gray-900">Actividad por Carpeta</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                Nombre de Carpeta
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                Documentos
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                Total Escaneos
+              </th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            <tr *ngIf="loading">
+              <td colspan="3" class="px-6 py-4 text-center text-gray-500">
+                Cargando...
+              </td>
+            </tr>
+            <tr *ngIf="!loading && (!stats || !stats.activity_by_folder || stats.activity_by_folder.length === 0)">
+              <td colspan="3" class="px-6 py-4 text-center text-gray-500">
+                No hay documentos aún. 
+                <button 
+                  type="button"
+                  routerLink="/upload"
+                  class="text-primary hover:underline font-medium ml-1">
+                  Sube tu primer documento
+                </button>
+              </td>
+            </tr>
+            <tr *ngFor="let folder of stats?.activity_by_folder" class="hover:bg-gray-50">
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                {{ folder.folder_name }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {{ formatNumber(folder.document_count) }}
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {{ formatNumber(folder.total_scans) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </main>
+  </div>
+</div>
+

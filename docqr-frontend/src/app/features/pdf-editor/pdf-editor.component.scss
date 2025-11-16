@@ -1,0 +1,13 @@
+/* Estilos específicos para el editor de PDF con Fabric.js */
+
+/* Asegurar que el contenedor del PDF tenga el tamaño correcto */
+.pdf-container {
+  position: relative;
+  width: 100%;
+  min-height: 600px;
+  background-color: #f3f4f6;
+}
+
+/* Canvas del PDF (inferior) - estilos aplicados directamente en el HTML */
+/* Canvas de Fabric.js (superior) - estilos aplicados directamente en el HTML */
+
