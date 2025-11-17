@@ -80,18 +80,29 @@ class EmbedController extends Controller
             }
 
             // Verificar que el archivo PDF existe
-            // Si ya tiene final_path, usar ese; sino usar file_path
+            // IMPORTANTE: Siempre usar el PDF original para reposicionar el QR
+            // Si usamos el PDF final, estaríamos agregando un QR sobre otro QR
             $pdfPathToUse = null;
             $pdfDiskToUse = null;
             
-            if ($qrFile->final_path) {
-                // Si ya tiene PDF final, usarlo para reposicionar el QR
-                $pdfPathToUse = str_replace('final/', '', $qrFile->final_path);
-                $pdfDiskToUse = 'final';
-            } elseif ($qrFile->file_path) {
-                // Usar PDF original si existe
+            // PRIORIDAD 1: Usar PDF original si existe físicamente
+            if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
                 $pdfPathToUse = $qrFile->file_path;
                 $pdfDiskToUse = 'local';
+                Log::info('Usando PDF original para reposicionar QR:', [
+                    'qr_id' => $qrFile->qr_id,
+                    'file_path' => $qrFile->file_path
+                ]);
+            } 
+            // PRIORIDAD 2: Si el original fue eliminado pero existe el final, usar el final como fallback
+            // (Esto puede pasar si se eliminó el original para ahorrar espacio)
+            elseif ($qrFile->final_path) {
+                $pdfPathToUse = str_replace('final/', '', $qrFile->final_path);
+                $pdfDiskToUse = 'final';
+                Log::warning('PDF original no encontrado, usando PDF final como fallback:', [
+                    'qr_id' => $qrFile->qr_id,
+                    'final_path' => $qrFile->final_path
+                ]);
             } else {
                 Log::error('El documento no tiene file_path ni final_path:', ['qr_id' => $qrFile->qr_id]);
                 return response()->json([
@@ -137,11 +148,13 @@ class EmbedController extends Controller
             }
 
             // Procesar PDF y embebir QR
+            // Pasar qr_id para nueva estructura optimizada de carpetas
             $finalPath = $this->pdfProcessor->embedQr(
                 $validationPath,
                 $qrFile->qr_path,
                 $position,
-                $pdfDiskToUse
+                $pdfDiskToUse,
+                $qrFile->qr_id // Pasar qr_id para nueva estructura
             );
 
             // Actualizar registro PRIMERO (antes de eliminar archivos)
@@ -154,20 +167,27 @@ class EmbedController extends Controller
                 ]);
             });
 
-            // Eliminar PDF original DESPUÉS de actualizar (para ahorrar espacio)
-            // NO actualizar file_path en BD (no puede ser NULL) - solo eliminar el archivo físico
+            // IMPORTANTE: NO eliminar el PDF original inmediatamente
+            // El editor necesita el PDF original para reposicionar el QR
+            // Solo se eliminará en un proceso de limpieza posterior (ej: después de X días)
+            // Comentado para permitir reposicionamiento del QR
+            /*
             if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
                 try {
                     Storage::disk('local')->delete($qrFile->file_path);
                     Log::info('PDF original eliminado exitosamente:', ['file_path' => $qrFile->file_path]);
                 } catch (\Exception $e) {
-                    // Si falla la eliminación, no es crítico - el archivo final ya está guardado
                     Log::warning('No se pudo eliminar PDF original (no crítico):', [
                         'file_path' => $qrFile->file_path,
                         'error' => $e->getMessage()
                     ]);
                 }
             }
+            */
+            Log::info('PDF original conservado para permitir reposicionamiento del QR', [
+                'qr_id' => $qrFile->qr_id,
+                'file_path' => $qrFile->file_path
+            ]);
 
             // URL pública del PDF final a través de la API (escalable para producción)
             $finalUrl = url("/api/files/pdf/{$qrFile->qr_id}");
@@ -277,9 +297,15 @@ class EmbedController extends Controller
                 ], 422);
             }
             
-            $folderName = $qrFile->folder_name;
-            $finalFileName = \Illuminate\Support\Str::random(8) . '-' . $qrFile->original_filename;
-            $finalPath = "final/{$folderName}/{$finalFileName}";
+            // NUEVA ESTRUCTURA OPTIMIZADA: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
+            $documentType = $this->extractDocumentType($qrFile->folder_name);
+            $monthYear = now()->format('Ym');
+            $finalFolder = "{$documentType}/{$monthYear}/{$qrFile->qr_id}";
+            Storage::disk('final')->makeDirectory($finalFolder);
+            
+            // Nombre del archivo: solo el nombre original (sin prefijos)
+            $finalFileName = $qrFile->original_filename;
+            $finalPath = "final/{$finalFolder}/{$finalFileName}";
 
             // PROCESAR PDF: Garantizar que solo tenga 1 página
             // Aunque el frontend debería enviar solo 1 página, procesamos el PDF para asegurarlo
@@ -441,6 +467,30 @@ class EmbedController extends Controller
                 'message' => 'Error al guardar el PDF: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Extraer el tipo de documento del folder_name
+     * Ejemplo: "CE-12345" -> "CE", "IN-ABC" -> "IN", "SU-XYZ" -> "SU"
+     * 
+     * @param string $folderName
+     * @return string Tipo de documento (CE, IN, SU) o "OTROS" si no coincide
+     */
+    private function extractDocumentType(string $folderName): string
+    {
+        // Extraer las primeras letras antes del guion
+        $parts = explode('-', $folderName);
+        $type = strtoupper(trim($parts[0] ?? ''));
+        
+        // Validar que sea uno de los tipos permitidos
+        $allowedTypes = ['CE', 'IN', 'SU'];
+        
+        if (in_array($type, $allowedTypes)) {
+            return $type;
+        }
+        
+        // Si no coincide, usar "OTROS" como carpeta por defecto
+        return 'OTROS';
     }
 }
 

@@ -6,6 +6,7 @@ import { DocqrService, Document } from '../../core/services/docqr.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
+import { CancelConfirmModalComponent } from '../../shared/components/cancel-confirm-modal/cancel-confirm-modal.component';
 import { environment } from '../../../environments/environment';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Canvas, Image as FabricImage, Object as FabricObject } from 'fabric';
@@ -23,7 +24,7 @@ if (typeof window !== 'undefined') {
 @Component({
   selector: 'app-pdf-editor',
   standalone: true,
-  imports: [CommonModule, HttpClientModule, RouterModule, HeaderComponent, SidebarComponent],
+  imports: [CommonModule, HttpClientModule, RouterModule, HeaderComponent, SidebarComponent, CancelConfirmModalComponent],
   templateUrl: './pdf-editor.component.html',
   styleUrls: ['./pdf-editor.component.scss']
 })
@@ -35,6 +36,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   document: Document | null = null;
   loading: boolean = true;
   saving: boolean = false;
+  
+  // Modal de confirmación de cancelación
+  cancelModalOpen: boolean = false;
   
   // URLs
   pdfUrl: string = '';
@@ -238,8 +242,11 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
-      // URLs
-      this.pdfUrl = this.document.pdf_url || '';
+      // URLs - Usar PDF original para el editor (sin QR)
+      // Si existe pdf_original_url, usarlo; si no, usar pdf_url como fallback
+      // IMPORTANTE: Agregar cache buster para evitar caché del navegador
+      const basePdfUrl = this.document.pdf_original_url || this.document.pdf_url || '';
+      this.pdfUrl = basePdfUrl ? `${basePdfUrl}?t=${Date.now()}&editor=true` : '';
       this.qrImageUrl = this.document.qr_image_url || '';
 
       if (!this.pdfUrl || !this.qrImageUrl) {
@@ -1130,6 +1137,11 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           // this.loadDocument(); // Comentado para evitar recargar y restaurar posición
           
           this.saving = false;
+          
+          // Mostrar mensaje de éxito con notificación
+          this.notificationService.showSuccess('✅ QR reposicionado exitosamente. El PDF final se ha actualizado.');
+          
+          // NO descargar automáticamente - el usuario puede descargar cuando quiera usando el botón
         } else {
           this.notificationService.showError(response.message || 'Error al embebir QR');
           this.saving = false;
@@ -1144,12 +1156,25 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Cancelar y volver
+   * Abrir modal de confirmación de cancelación
    */
   cancel(): void {
-    if (confirm('¿Estás seguro de que deseas cancelar? Los cambios no se guardarán.')) {
-      this.router.navigate(['/documents']);
-    }
+    this.cancelModalOpen = true;
+  }
+
+  /**
+   * Cerrar modal de confirmación de cancelación
+   */
+  closeCancelModal(): void {
+    this.cancelModalOpen = false;
+  }
+
+  /**
+   * Confirmar cancelación y volver a la lista
+   */
+  confirmCancel(): void {
+    this.closeCancelModal();
+    this.router.navigate(['/documents']);
   }
 
   /**
@@ -1200,6 +1225,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /**
    * Descargar imagen QR
+   * Usa fetch con blob para forzar la descarga
    */
   downloadQrImage(): void {
     if (!this.qrImageUrl) {
@@ -1207,14 +1233,30 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    const link = document.createElement('a');
-    link.href = this.qrImageUrl;
-    link.download = `qr-${this.qrId}.png`;
-    link.click();
+    // Usar fetch con blob para forzar la descarga
+    fetch(this.qrImageUrl)
+      .then(response => response.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `qr-${this.qrId}.png`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        this.notificationService.showSuccess('✅ QR descargado exitosamente');
+      })
+      .catch(error => {
+        console.error('Error al descargar QR:', error);
+        this.notificationService.showError('Error al descargar el QR');
+      });
   }
 
   /**
    * Descargar PDF con QR embebido
+   * Usa fetch con blob para forzar la descarga (no abre nueva pestaña)
    */
   downloadPdfWithQr(): void {
     if (!this.document?.final_pdf_url) {
@@ -1222,9 +1264,32 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    const link = document.createElement('a');
-    link.href = this.document.final_pdf_url;
-    link.download = `${this.document.original_filename}`;
-    link.click();
+    // Agregar timestamp para evitar caché
+    const urlWithCacheBuster = `${this.document.final_pdf_url}?t=${Date.now()}`;
+    
+    // Usar fetch con blob para forzar la descarga
+    fetch(urlWithCacheBuster)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error al obtener el PDF');
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = this.document?.original_filename || 'documento.pdf';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        this.notificationService.showSuccess('✅ PDF con QR descargado exitosamente');
+      })
+      .catch(error => {
+        console.error('Error al descargar PDF:', error);
+        this.notificationService.showError('Error al descargar el PDF');
+      });
   }
 }

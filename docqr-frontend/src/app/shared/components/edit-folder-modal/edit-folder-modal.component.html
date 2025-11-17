@@ -1,0 +1,93 @@
+<div 
+  *ngIf="isOpen"
+  class="modal-backdrop fixed inset-0 bg-black/50 backdrop-blur-sm z-[9998] flex items-center justify-center p-4 animate-fade-in"
+  (click)="onBackdropClick($event)">
+  <div 
+    class="bg-white rounded-xl shadow-2xl max-w-md w-full transform transition-all animate-scale-in"
+    (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-gray-200">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-blue-100 rounded-full">
+          <span class="material-symbols-outlined text-blue-600 text-2xl">folder</span>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-900">Editar Nombre de Carpeta</h3>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="px-6 py-4">
+      <p class="text-gray-700 mb-4">
+        Modifica el código/nombre de la carpeta del documento:
+      </p>
+      
+      <div class="bg-gray-50 rounded-lg p-3 mb-4">
+        <p class="text-sm text-gray-600 mb-1">
+          <span class="font-medium">Documento:</span> {{ documentName }}
+        </p>
+        <p class="text-sm text-gray-600">
+          <span class="font-medium">Nombre actual:</span> {{ currentFolderName }}
+        </p>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Tipo de Documento -->
+        <label class="block">
+          <p class="text-sm font-medium text-gray-700 mb-2">Tipo de Documento *</p>
+          <select
+            [(ngModel)]="documentType"
+            (change)="updateFolderName()"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <option value="CE">CE - Certificado</option>
+            <option value="IN">IN - Informe de Ensayo</option>
+            <option value="SU">SU - Suplemento</option>
+          </select>
+        </label>
+
+        <!-- Código del Documento -->
+        <label class="block">
+          <p class="text-sm font-medium text-gray-700 mb-2">Código del Documento *</p>
+          <input
+            type="text"
+            [(ngModel)]="documentCode"
+            (input)="updateFolderName()"
+            placeholder="Ej: 12345, ABC, XYZ"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            (keyup.enter)="onSave()"
+            (keyup.escape)="onCancel()">
+          <p class="text-xs text-gray-500 mt-1">
+            Solo letras, números y guiones
+          </p>
+        </label>
+
+        <!-- Vista previa del nombre completo -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p class="text-xs text-gray-600 mb-1">Nombre completo:</p>
+          <p class="text-sm font-mono font-semibold text-blue-900">{{ newFolderName || 'TIPO-CODIGO' }}</p>
+        </div>
+
+        <p *ngIf="documentCode && !isValidFormat()" class="text-xs text-red-500">
+          ⚠️ El código no puede estar vacío
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+      <button
+        type="button"
+        (click)="onCancel()"
+        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+        Cancelar
+      </button>
+      <button
+        type="button"
+        (click)="onSave()"
+        [disabled]="!documentType || !documentCode || !isValidFormat() || newFolderName.trim() === currentFolderName"
+        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+        Guardar Cambios
+      </button>
+    </div>
+  </div>
+</div>
+

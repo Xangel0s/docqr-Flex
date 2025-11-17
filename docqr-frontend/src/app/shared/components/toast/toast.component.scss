@@ -1,6 +1,7 @@
-@keyframes slide-in {
+/* Animación de entrada desde la derecha */
+@keyframes slide-in-right {
   from {
-    transform: translateX(100%);
+    transform: translateX(120%);
     opacity: 0;
   }
   to {
@@ -9,7 +10,56 @@
   }
 }
 
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out;
+/* Animación de fade in */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Animación de bounce para el icono */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Animación de salida */
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.animate-slide-out-right {
+  animation: slide-out-right 0.3s ease-in;
 }
 

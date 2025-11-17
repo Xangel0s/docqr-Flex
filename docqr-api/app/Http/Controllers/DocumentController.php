@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
  * Controlador para gestión de documentos
@@ -85,9 +86,34 @@ class DocumentController extends Controller
             $perPage = $request->input('per_page', 15);
             $documents = $query->paginate($perPage);
 
+            // Transformar documentos para incluir URLs
+            $transformedDocuments = $documents->map(function ($document) {
+                return [
+                    'id' => $document->id,
+                    'qr_id' => $document->qr_id,
+                    'folder_name' => $document->folder_name,
+                    'original_filename' => $document->original_filename,
+                    'file_size' => $document->file_size,
+                    'qr_position' => $document->qr_position,
+                    'status' => $document->status,
+                    'scan_count' => $document->scan_count,
+                    'last_scanned_at' => $document->last_scanned_at?->format('Y-m-d H:i:s'),
+                    'created_at' => $document->created_at?->format('Y-m-d H:i:s'),
+                    'updated_at' => $document->updated_at?->format('Y-m-d H:i:s'),
+                    // URLs generadas dinámicamente
+                    'qr_url' => url("/api/view/{$document->qr_id}"),
+                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
+                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
+                    'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
+                    'final_pdf_url' => $document->final_path 
+                        ? url("/api/files/pdf/{$document->qr_id}")
+                        : null,
+                ];
+            });
+
             return response()->json([
                 'success' => true,
-                'data' => $documents->items(),
+                'data' => $transformedDocuments->values()->all(),
                 'meta' => [
                     'current_page' => $documents->currentPage(),
                     'last_page' => $documents->lastPage(),
@@ -129,7 +155,8 @@ class DocumentController extends Controller
                     'last_scanned_at' => $document->last_scanned_at,
                     'created_at' => $document->created_at,
                     'qr_url' => $document->view_url,
-                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"),
+                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
+                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
                     'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
                     'final_pdf_url' => $document->final_path 
                         ? url("/api/files/pdf/{$document->qr_id}")
@@ -170,7 +197,8 @@ class DocumentController extends Controller
                     'last_scanned_at' => $document->last_scanned_at,
                     'created_at' => $document->created_at,
                     'qr_url' => $document->view_url,
-                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"),
+                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
+                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
                     'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
                     'final_pdf_url' => $document->final_path 
                         ? url("/api/files/pdf/{$document->qr_id}")
@@ -183,6 +211,94 @@ class DocumentController extends Controller
                 'success' => false,
                 'message' => 'Documento no encontrado'
             ], 404);
+        }
+    }
+
+    /**
+     * Actualizar nombre de carpeta de un documento
+     * 
+     * @param string $qrId
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function updateFolderName(string $qrId, Request $request): JsonResponse
+    {
+        try {
+            // Validar entrada
+            // Permitir caracteres en español (incluyendo Ñ, ñ, acentos) y caracteres alfanuméricos
+            $request->validate([
+                'folder_name' => ['required', 'string', 'max:100', 'regex:/^(CE|IN|SU)-[A-Za-z0-9ÑñÁÉÍÓÚáéíóúÜü\-]+$/u']
+            ], [
+                'folder_name.required' => 'El nombre de carpeta es obligatorio',
+                'folder_name.regex' => 'El formato debe ser: TIPO-CODIGO (ej: CE-12345, IN-ABC, SU-XYZ). Solo se permiten tipos: CE, IN, SU. Se permiten caracteres en español (Ñ, ñ, acentos).'
+            ]);
+
+            // Buscar documento
+            $document = QrFile::where('qr_id', $qrId)->first();
+            
+            if (!$document) {
+                Log::warning('Documento no encontrado al actualizar nombre de carpeta:', [
+                    'qr_id' => $qrId,
+                    'folder_name' => $request->folder_name
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Documento no encontrado'
+                ], 404);
+            }
+            
+            $oldFolderName = $document->folder_name;
+            $document->folder_name = $request->folder_name;
+            
+            // Guardar cambios
+            $document->save();
+
+            Log::info('Nombre de carpeta actualizado exitosamente:', [
+                'qr_id' => $qrId,
+                'old_folder_name' => $oldFolderName,
+                'new_folder_name' => $request->folder_name
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Nombre de carpeta actualizado exitosamente',
+                'data' => [
+                    'id' => $document->id,
+                    'qr_id' => $document->qr_id,
+                    'folder_name' => $document->folder_name,
+                    'original_filename' => $document->original_filename,
+                ]
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning('Error de validación al actualizar nombre de carpeta:', [
+                'qr_id' => $qrId,
+                'errors' => $e->errors()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (ModelNotFoundException $e) {
+            Log::warning('Documento no encontrado (ModelNotFoundException):', [
+                'qr_id' => $qrId,
+                'message' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Documento no encontrado'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error inesperado al actualizar nombre de carpeta:', [
+                'qr_id' => $qrId,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar el nombre de carpeta. Por favor, intente nuevamente.'
+            ], 500);
         }
     }
 

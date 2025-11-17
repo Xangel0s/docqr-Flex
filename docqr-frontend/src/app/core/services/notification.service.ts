@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { Subject, Observable } from 'rxjs';
 
 /**
  * Tipo de notificación
@@ -24,12 +25,27 @@ export interface Notification {
 export class NotificationService {
   private notifications: Notification[] = [];
   private nextId = 0;
+  private notificationsSubject = new Subject<Notification[]>();
+
+  /**
+   * Observable para suscribirse a cambios en las notificaciones
+   */
+  get notifications$(): Observable<Notification[]> {
+    return this.notificationsSubject.asObservable();
+  }
 
   /**
    * Obtener lista de notificaciones
    */
   getNotifications(): Notification[] {
     return this.notifications;
+  }
+
+  /**
+   * Notificar cambios a los suscriptores
+   */
+  private notify(): void {
+    this.notificationsSubject.next([...this.notifications]);
   }
 
   /**
@@ -72,6 +88,7 @@ export class NotificationService {
     };
 
     this.notifications.push(notification);
+    this.notify();
 
     // Auto-remover después de la duración
     if (duration > 0) {
@@ -86,6 +103,7 @@ export class NotificationService {
    */
   remove(id: number): void {
     this.notifications = this.notifications.filter(n => n.id !== id);
+    this.notify();
   }
 
   /**
@@ -93,6 +111,7 @@ export class NotificationService {
    */
   clear(): void {
     this.notifications = [];
+    this.notify();
   }
 }
 

@@ -53,6 +53,7 @@ export interface Document {
   created_at: string;
   qr_url: string;
   pdf_url: string;
+  pdf_original_url?: string; // URL del PDF original (para editor)
   qr_image_url: string;
   final_pdf_url: string | null;
 }
@@ -205,6 +206,16 @@ export class DocqrService {
   /**
    * Eliminar documento
    */
+  /**
+   * Actualizar nombre de carpeta de un documento
+   */
+  updateFolderName(qrId: string, folderName: string): Observable<{ success: boolean; message: string; data?: any }> {
+    return this.http.put<{ success: boolean; message: string; data?: any }>(
+      `${this.apiUrl}/documents/qr/${qrId}/folder-name`,
+      { folder_name: folderName }
+    );
+  }
+
   deleteDocument(id: number): Observable<{ success: boolean; message: string }> {
     return this.http.delete<{ success: boolean; message: string }>(`${this.apiUrl}/documents/${id}`);
   }

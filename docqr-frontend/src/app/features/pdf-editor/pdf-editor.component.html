@@ -30,7 +30,7 @@
               type="button"
               (click)="savePosition()"
               [disabled]="saving || loading"
-              class="btn-primary">
+              class="btn-primary button-with-animation">
               <span *ngIf="saving" class="material-symbols-outlined text-lg mr-2 animate-spin align-middle">sync</span>
               <span *ngIf="!saving" class="material-symbols-outlined text-lg mr-2 align-middle">save</span>
               {{ saving ? 'Guardando...' : 'Guardar Posición' }}
@@ -130,7 +130,7 @@
             <button 
               type="button"
               (click)="copyQrUrl()"
-              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors">
+              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-all active:scale-95">
               <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-gray-600">link</span>
                 <span class="text-sm font-medium text-gray-700">Copiar URL del QR</span>
@@ -143,7 +143,7 @@
               type="button"
               (click)="downloadQrImage()"
               [disabled]="!qrImageUrl"
-              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100">
               <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-gray-600">qr_code</span>
                 <span class="text-sm font-medium text-gray-700">Descargar QR</span>
@@ -156,7 +156,7 @@
               type="button"
               (click)="downloadPdfWithQr()"
               [disabled]="!pdfUrl || !document?.final_pdf_url || document?.status !== 'completed'"
-              class="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-primary bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-primary bg-primary text-white hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100">
               <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined">picture_as_pdf</span>
                 <span class="text-sm font-medium">Descargar PDF con QR</span>
@@ -205,4 +205,11 @@
       </div>
     </main>
   </div>
+
+  <!-- Modal de confirmación de cancelación -->
+  <app-cancel-confirm-modal
+    [isOpen]="cancelModalOpen"
+    (confirm)="confirmCancel()"
+    (cancel)="closeCancelModal()">
+  </app-cancel-confirm-modal>
 </div>

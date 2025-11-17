@@ -1,5 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Subscription } from 'rxjs';
 import { NotificationService, Notification } from '../../../core/services/notification.service';
 
 /**
@@ -12,18 +13,28 @@ import { NotificationService, Notification } from '../../../core/services/notifi
   templateUrl: './toast.component.html',
   styleUrls: ['./toast.component.scss']
 })
-export class ToastComponent implements OnInit {
+export class ToastComponent implements OnInit, OnDestroy {
   notifications: Notification[] = [];
+  private subscription?: Subscription;
 
   constructor(private notificationService: NotificationService) {}
 
   ngOnInit(): void {
-    this.notificationService.getNotifications().forEach(() => {
-      // Suscribirse a cambios (implementación simple)
-      setInterval(() => {
-        this.notifications = [...this.notificationService.getNotifications()];
-      }, 100);
-    });
+    // Suscribirse a cambios en las notificaciones
+    this.subscription = this.notificationService.notifications$.subscribe(
+      (notifications) => {
+        this.notifications = notifications;
+      }
+    );
+    
+    // Cargar notificaciones iniciales
+    this.notifications = [...this.notificationService.getNotifications()];
+  }
+
+  ngOnDestroy(): void {
+    if (this.subscription) {
+      this.subscription.unsubscribe();
+    }
   }
 
   /**
@@ -31,7 +42,6 @@ export class ToastComponent implements OnInit {
    */
   remove(id: number): void {
     this.notificationService.remove(id);
-    this.notifications = [...this.notificationService.getNotifications()];
   }
 
   /**
@@ -39,10 +49,10 @@ export class ToastComponent implements OnInit {
    */
   getNotificationClass(type: string): string {
     const classes: { [key: string]: string } = {
-      success: 'bg-green-500 text-white',
-      error: 'bg-red-500 text-white',
-      warning: 'bg-yellow-500 text-white',
-      info: 'bg-blue-500 text-white'
+      success: 'bg-green-500 text-white border-l-4 border-green-600',
+      error: 'bg-red-500 text-white border-l-4 border-red-600',
+      warning: 'bg-yellow-500 text-white border-l-4 border-yellow-600',
+      info: 'bg-blue-500 text-white border-l-4 border-blue-600'
     };
     return classes[type] || classes['info'];
   }
@@ -58,6 +68,13 @@ export class ToastComponent implements OnInit {
       info: 'info'
     };
     return icons[type] || icons['info'];
+  }
+
+  /**
+   * TrackBy function para optimizar el renderizado
+   */
+  trackByNotificationId(index: number, notification: Notification): number {
+    return notification.id;
   }
 }
 

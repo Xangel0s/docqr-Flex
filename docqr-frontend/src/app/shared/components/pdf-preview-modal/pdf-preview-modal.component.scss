@@ -1,0 +1,44 @@
+.modal-backdrop {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.modal-content {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+// Estilos para modo oscuro
+.dark-mode {
+  background-color: #1f2937 !important;
+  
+  ::ng-deep ngx-extended-pdf-viewer {
+    background-color: #1f2937 !important;
+  }
+}
+
+// Asegurar que el PDF viewer ocupe todo el espacio
+::ng-deep ngx-extended-pdf-viewer {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+

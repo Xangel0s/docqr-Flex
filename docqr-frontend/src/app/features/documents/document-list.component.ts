@@ -1,11 +1,16 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterModule } from '@angular/router';
+import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { Subscription, filter } from 'rxjs';
 import { DocqrService, Document, DocumentsResponse } from '../../core/services/docqr.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
+import { PdfPreviewModalComponent } from '../../shared/components/pdf-preview-modal/pdf-preview-modal.component';
+import { DeleteConfirmModalComponent } from '../../shared/components/delete-confirm-modal/delete-confirm-modal.component';
+import { EditOptionModalComponent, EditType } from '../../shared/components/edit-option-modal/edit-option-modal.component';
+import { EditFolderModalComponent } from '../../shared/components/edit-folder-modal/edit-folder-modal.component';
 
 /**
  * Componente para listar documentos
@@ -13,11 +18,11 @@ import { SidebarComponent } from '../../shared/components/sidebar/sidebar.compon
 @Component({
   selector: 'app-document-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, HeaderComponent, SidebarComponent],
+  imports: [CommonModule, RouterModule, FormsModule, HeaderComponent, SidebarComponent, PdfPreviewModalComponent, DeleteConfirmModalComponent, EditOptionModalComponent, EditFolderModalComponent],
   templateUrl: './document-list.component.html',
   styleUrls: ['./document-list.component.scss']
 })
-export class DocumentListComponent implements OnInit {
+export class DocumentListComponent implements OnInit, OnDestroy {
   sidebarOpen: boolean = false;
   documents: Document[] = [];
   loading: boolean = true;
@@ -46,6 +51,26 @@ export class DocumentListComponent implements OnInit {
   
   activeFiltersCount: number = 0;
 
+  // Modal de vista previa
+  previewModalOpen: boolean = false;
+  previewPdfUrl: string = '';
+  previewDocumentName: string = '';
+
+  // Modal de confirmación de eliminación
+  deleteModalOpen: boolean = false;
+  documentToDelete: Document | null = null;
+
+  // Modal de selección de tipo de edición
+  editOptionModalOpen: boolean = false;
+  documentToEdit: Document | null = null;
+
+  // Modal de edición de nombre de carpeta
+  editFolderModalOpen: boolean = false;
+  savingFolderName: boolean = false;
+
+  // Suscripción para detectar navegación
+  private routerSubscription?: Subscription;
+
   constructor(
     private docqrService: DocqrService,
     private notificationService: NotificationService,
@@ -58,6 +83,22 @@ export class DocumentListComponent implements OnInit {
     }
     this.loadDocuments();
     this.loadStats();
+    
+    // Recargar documentos cuando vuelves del editor
+    this.routerSubscription = this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd))
+      .subscribe((event: any) => {
+        // Si volvemos a la lista desde otra ruta, recargar documentos
+        if (event.url === '/documents' || event.urlAfterRedirects === '/documents') {
+          this.loadDocuments();
+        }
+      });
+  }
+
+  ngOnDestroy(): void {
+    if (this.routerSubscription) {
+      this.routerSubscription.unsubscribe();
+    }
   }
 
   /**
@@ -187,30 +228,131 @@ export class DocumentListComponent implements OnInit {
   }
 
   /**
-   * Ver documento
+   * Ver documento (abrir modal de vista previa)
    */
   viewDocument(document: Document): void {
-    // Priorizar PDF final con QR, luego PDF original, luego URL del QR
+    // Priorizar PDF final con QR, luego PDF original
     if (document.final_pdf_url) {
-      window.open(document.final_pdf_url, '_blank');
+      this.previewPdfUrl = document.final_pdf_url;
+      this.previewDocumentName = document.original_filename;
+      this.previewModalOpen = true;
     } else if (document.pdf_url) {
-      window.open(document.pdf_url, '_blank');
-    } else if (document.qr_url) {
-      window.open(document.qr_url, '_blank');
+      this.previewPdfUrl = document.pdf_url;
+      this.previewDocumentName = document.original_filename;
+      this.previewModalOpen = true;
     } else {
       this.notificationService.showWarning('El documento aún no tiene PDF disponible');
     }
   }
 
   /**
-   * Editar documento (ir al editor)
+   * Cerrar modal de vista previa
+   */
+  closePreviewModal(): void {
+    this.previewModalOpen = false;
+    this.previewPdfUrl = '';
+    this.previewDocumentName = '';
+  }
+
+  /**
+   * Abrir modal de selección de tipo de edición
    */
   editDocument(document: Document): void {
-    this.router.navigate(['/editor', document.qr_id]);
+    this.documentToEdit = document;
+    this.editOptionModalOpen = true;
+  }
+
+  /**
+   * Cerrar modal de selección de tipo de edición
+   */
+  closeEditOptionModal(): void {
+    this.editOptionModalOpen = false;
+    // NO poner documentToEdit en null aquí, se necesita para los modales siguientes
+  }
+
+  /**
+   * Manejar selección de tipo de edición
+   */
+  onEditOptionSelected(editType: EditType): void {
+    // Guardar referencia del documento antes de cerrar el modal
+    const documentToEdit = this.documentToEdit;
+    
+    if (!documentToEdit) {
+      this.notificationService.showError('No hay documento seleccionado');
+      this.editOptionModalOpen = false;
+      return;
+    }
+    
+    // Cerrar modal de selección
+    this.editOptionModalOpen = false;
+    
+    if (editType === 'qr_position') {
+      // Abrir editor de posición del QR
+      this.router.navigate(['/editor', documentToEdit.qr_id]);
+      // Limpiar después de navegar
+      this.documentToEdit = null;
+    } else if (editType === 'folder') {
+      // Abrir modal de edición de nombre de carpeta
+      // documentToEdit se mantiene para el modal de carpeta
+      this.openEditFolderModal();
+    }
+  }
+
+  /**
+   * Abrir modal de edición de nombre de carpeta
+   */
+  openEditFolderModal(): void {
+    this.editFolderModalOpen = true;
+  }
+
+  /**
+   * Cerrar modal de edición de nombre de carpeta
+   */
+  closeEditFolderModal(): void {
+    this.editFolderModalOpen = false;
+    // Limpiar documento solo después de cerrar el modal
+    this.documentToEdit = null;
+  }
+
+  /**
+   * Guardar nuevo nombre de carpeta
+   */
+  saveFolderName(newFolderName: string): void {
+    if (!this.documentToEdit) {
+      this.notificationService.showError('No hay documento seleccionado');
+      return;
+    }
+
+    if (!newFolderName || newFolderName.trim() === '') {
+      this.notificationService.showError('El nombre de carpeta no puede estar vacío');
+      return;
+    }
+
+    this.savingFolderName = true;
+
+    this.docqrService.updateFolderName(this.documentToEdit.qr_id, newFolderName).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.notificationService.showSuccess(`✅ Nombre de carpeta actualizado exitosamente a: ${newFolderName}`);
+          this.closeEditFolderModal();
+          this.loadDocuments(); // Recargar lista para mostrar cambios
+          this.loadStats(); // Actualizar estadísticas
+        } else {
+          this.notificationService.showError(response.message || 'Error al actualizar el nombre de carpeta');
+        }
+        this.savingFolderName = false;
+      },
+      error: (error) => {
+        const errorMessage = error.error?.message || error.error?.errors?.folder_name?.[0] || 'Error al actualizar el nombre de carpeta';
+        this.notificationService.showError(errorMessage);
+        this.savingFolderName = false;
+      }
+    });
   }
 
   /**
    * Copiar enlace del documento
+   * Copia automáticamente la URL del documento y muestra notificación
    */
   copyLink(document: Document): void {
     const url = document.qr_url || '';
@@ -223,9 +365,8 @@ export class DocumentListComponent implements OnInit {
     // Intentar usar la API moderna del portapapeles
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).then(() => {
-        this.notificationService.showSuccess('Enlace copiado al portapapeles');
-      }).catch((error) => {
-        console.error('Error al copiar enlace:', error);
+        this.notificationService.showSuccess('✅ Enlace copiado al portapapeles');
+      }).catch(() => {
         // Fallback: método antiguo
         this.fallbackCopyToClipboard(url);
       });
@@ -239,7 +380,6 @@ export class DocumentListComponent implements OnInit {
    * Método alternativo para copiar al portapapeles (fallback)
    */
   private fallbackCopyToClipboard(text: string): void {
-    // Usar window.document para evitar conflictos
     const textArea = window.document.createElement('textarea');
     textArea.value = text;
     textArea.style.position = 'fixed';
@@ -252,13 +392,12 @@ export class DocumentListComponent implements OnInit {
     try {
       const successful = window.document.execCommand('copy');
       if (successful) {
-        this.notificationService.showSuccess('Enlace copiado al portapapeles');
+        this.notificationService.showSuccess('✅ Enlace copiado al portapapeles');
       } else {
-        this.notificationService.showError('No se pudo copiar el enlace. Cópialo manualmente: ' + text);
+        this.notificationService.showError('No se pudo copiar el enlace. Cópialo manualmente');
       }
-    } catch (error) {
-      console.error('Error al copiar enlace:', error);
-      this.notificationService.showError('No se pudo copiar el enlace. Cópialo manualmente: ' + text);
+    } catch {
+      this.notificationService.showError('No se pudo copiar el enlace. Cópialo manualmente');
     } finally {
       window.document.body.removeChild(textArea);
     }
@@ -266,48 +405,166 @@ export class DocumentListComponent implements OnInit {
 
   /**
    * Descargar documento PDF
+   * Obtiene el documento actualizado del backend para asegurar la URL más reciente
    */
   downloadDocument(doc: Document): void {
-    // Priorizar PDF final con QR, luego PDF original
-    const pdfUrl = doc.final_pdf_url || doc.pdf_url;
-    
-    if (!pdfUrl) {
-      this.notificationService.showWarning('No hay PDF disponible para descargar');
-      return;
-    }
+    // Obtener el documento actualizado del backend para asegurar que tenemos la URL más reciente
+    this.docqrService.getDocumentByQrId(doc.qr_id).subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          const updatedDoc = response.data;
+          // Usar el documento actualizado del backend
+          const pdfUrl = updatedDoc.final_pdf_url || updatedDoc.pdf_url;
+          
+          if (!pdfUrl) {
+            this.notificationService.showWarning('No hay PDF disponible para descargar');
+            return;
+          }
 
-    try {
-      // Crear un enlace temporal para descargar
-      // Usar window.document para evitar conflicto con el parámetro 'doc'
-      const link = window.document.createElement('a');
-      link.href = pdfUrl;
-      link.download = doc.original_filename || 'documento.pdf';
-      link.target = '_blank';
-      window.document.body.appendChild(link);
-      link.click();
-      window.document.body.removeChild(link);
-      
-      this.notificationService.showSuccess('PDF descargado exitosamente');
-    } catch (error) {
-      console.error('Error al descargar PDF:', error);
-      this.notificationService.showError('Error al descargar el PDF. Intenta abrir la URL manualmente.');
-      // Fallback: abrir en nueva pestaña
-      window.open(pdfUrl, '_blank');
-    }
+          try {
+            // Agregar timestamp para evitar caché del navegador
+            const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
+            
+            // Usar fetch con blob para forzar la descarga (no abrir pestaña, no cambiar de página)
+            fetch(urlWithCacheBuster)
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Error al obtener el PDF');
+                }
+                return response.blob();
+              })
+              .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const link = window.document.createElement('a');
+                link.href = url;
+                link.download = updatedDoc.original_filename || 'documento.pdf';
+                link.style.display = 'none';
+                window.document.body.appendChild(link);
+                link.click();
+                window.document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+                // Actualizar el documento en la lista local
+                const index = this.documents.findIndex(d => d.id === doc.id);
+                if (index !== -1) {
+                  this.documents[index] = updatedDoc;
+                }
+                
+                this.notificationService.showSuccess('✅ PDF descargado exitosamente');
+              })
+              .catch(error => {
+                console.error('Error al descargar PDF:', error);
+                this.notificationService.showError('Error al descargar el PDF');
+              });
+          } catch (error) {
+            console.error('Error al descargar PDF:', error);
+            this.notificationService.showError('Error al descargar el PDF');
+          }
+        } else {
+          // Fallback: usar el documento de la lista
+          const pdfUrl = doc.final_pdf_url || doc.pdf_url;
+          if (!pdfUrl) {
+            this.notificationService.showWarning('No hay PDF disponible para descargar');
+            return;
+          }
+          
+          // Usar fetch con blob para forzar la descarga
+          const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
+          fetch(urlWithCacheBuster)
+            .then(response => {
+              if (!response.ok) {
+                throw new Error('Error al obtener el PDF');
+              }
+              return response.blob();
+            })
+            .then(blob => {
+              const url = window.URL.createObjectURL(blob);
+              const link = window.document.createElement('a');
+              link.href = url;
+              link.download = doc.original_filename || 'documento.pdf';
+              link.style.display = 'none';
+              window.document.body.appendChild(link);
+              link.click();
+              window.document.body.removeChild(link);
+              window.URL.revokeObjectURL(url);
+              this.notificationService.showSuccess('✅ PDF descargado exitosamente');
+            })
+            .catch(error => {
+              console.error('Error al descargar PDF:', error);
+              this.notificationService.showError('Error al descargar el PDF');
+            });
+        }
+      },
+      error: (error) => {
+        console.error('Error al obtener documento actualizado:', error);
+        // Fallback: usar el documento de la lista con cache buster
+        const pdfUrl = doc.final_pdf_url || doc.pdf_url;
+        if (!pdfUrl) {
+          this.notificationService.showWarning('No hay PDF disponible para descargar');
+          return;
+        }
+        
+        // Usar fetch con blob para forzar la descarga
+        const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
+        fetch(urlWithCacheBuster)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Error al obtener el PDF');
+            }
+            return response.blob();
+          })
+          .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const link = window.document.createElement('a');
+            link.href = url;
+            link.download = doc.original_filename || 'documento.pdf';
+            link.style.display = 'none';
+            window.document.body.appendChild(link);
+            link.click();
+            window.document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            this.notificationService.showSuccess('✅ PDF descargado exitosamente');
+          })
+          .catch(error => {
+            console.error('Error al descargar PDF:', error);
+            this.notificationService.showError('Error al descargar el PDF');
+          });
+      }
+    });
   }
 
   /**
-   * Eliminar documento
+   * Abrir modal de confirmación de eliminación
    */
-  deleteDocument(document: Document): void {
-    if (!confirm(`¿Estás seguro de que deseas eliminar el documento "${document.original_filename}"?`)) {
+  openDeleteModal(document: Document): void {
+    this.documentToDelete = document;
+    this.deleteModalOpen = true;
+  }
+
+  /**
+   * Cerrar modal de confirmación de eliminación
+   */
+  closeDeleteModal(): void {
+    this.deleteModalOpen = false;
+    this.documentToDelete = null;
+  }
+
+  /**
+   * Confirmar eliminación de documento
+   */
+  confirmDelete(): void {
+    if (!this.documentToDelete) {
       return;
     }
 
-    this.docqrService.deleteDocument(document.id).subscribe({
+    const documentId = this.documentToDelete.id;
+    const documentName = this.documentToDelete.original_filename;
+
+    this.docqrService.deleteDocument(documentId).subscribe({
       next: (response) => {
         if (response.success) {
-          this.notificationService.showSuccess('Documento eliminado exitosamente');
+          this.notificationService.showSuccess(`✅ Documento "${documentName}" eliminado exitosamente`);
+          this.closeDeleteModal();
           this.loadDocuments();
           this.loadStats();
         } else {

@@ -21,10 +21,11 @@ class PdfProcessorService
      * @param string $qrPath Ruta de la imagen QR (storage/qrcodes/...)
      * @param array $position Posición del QR: ['x' => int, 'y' => int, 'width' => int, 'height' => int]
      * @param string|null $pdfDisk Disco donde está el PDF ('local' o 'final')
+     * @param string|null $qrId ID del QR (opcional, para nueva estructura optimizada de carpetas)
      * @return string Ruta relativa del PDF final (storage/final/...)
      * @throws \Exception Si hay error al procesar el PDF
      */
-    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local'): string
+    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null): string
     {
         try {
             // Crear instancia de FPDI
@@ -306,31 +307,71 @@ class PdfProcessorService
                 'page_count_after_insert' => $pdf->getNumPages()
             ]);
 
-            // Organizar PDF final por tipo (sin carpetas mensuales)
-            // Extraer tipo de la ruta: uploads/CE/CE-12345/... -> CE
+            // NUEVA ESTRUCTURA OPTIMIZADA: Organizar PDF final igual que original
+            // Estructura: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
             $pathParts = explode('/', $pdfPath);
             $documentType = 'OTROS';
+            $monthYear = now()->format('Ym'); // Por defecto, mes actual
+            $qrIdFromPath = $qrId ?? ''; // Usar qr_id pasado como parámetro o extraer de ruta
             
-            if (count($pathParts) >= 2) {
-                if (in_array(strtoupper($pathParts[1]), ['CE', 'IN', 'SU'])) {
+            // Detectar estructura: nueva (uploads/CE/202511/{qr_id}/) o antigua (uploads/CE/CE-12345/)
+            $isNewStructure = false;
+            
+            // Nueva estructura: uploads/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
+            if (count($pathParts) >= 4) {
+                // pathParts[0] = "uploads", pathParts[1] = "CE", pathParts[2] = "202511", pathParts[3] = "{qr_id}"
+                if (in_array(strtoupper($pathParts[1] ?? ''), ['CE', 'IN', 'SU'])) {
                     $documentType = strtoupper($pathParts[1]);
+                    // Verificar si pathParts[2] es un año/mes (6 dígitos)
+                    if (isset($pathParts[2]) && preg_match('/^(\d{6})$/', $pathParts[2], $matches)) {
+                        $monthYear = $matches[1]; // YYYYMM
+                        $isNewStructure = true;
+                        // Extraer qr_id de pathParts[3]
+                        if (isset($pathParts[3])) {
+                            $qrIdFromPath = $pathParts[3];
+                        }
+                    }
                 }
             }
             
-            // Extraer mes del nombre del archivo: 202511-{qr_id}-documento.pdf -> 202511
-            $originalBasename = basename($pdfPath);
-            $monthYear = now()->format('Ym'); // Por defecto, mes actual
-            if (preg_match('/^(\d{6})-\w+-/', $originalBasename, $matches)) {
-                $monthYear = $matches[1]; // Extraer YYYYMM del nombre
+            // Si es estructura antigua, extraer tipo de otra manera
+            if (!$isNewStructure && count($pathParts) >= 2) {
+                if (in_array(strtoupper($pathParts[1] ?? ''), ['CE', 'IN', 'SU'])) {
+                    $documentType = strtoupper($pathParts[1]);
+                }
+                // En estructura antigua, el mes está en el nombre del archivo
+                $originalBasename = basename($pdfPath);
+                if (preg_match('/^(\d{6})-\w+-/', $originalBasename, $matches)) {
+                    $monthYear = $matches[1]; // YYYYMM del nombre
+                }
             }
             
-            // Crear carpeta solo por tipo: final/CE/
-            $finalFolder = $documentType;
+            // Si no tenemos qr_id, intentar extraerlo del nombre del archivo (estructura antigua)
+            if (empty($qrIdFromPath)) {
+                $originalBasename = basename($pdfPath);
+                // Intentar extraer de formato antiguo: 202511-{qr_id}-documento.pdf
+                if (preg_match('/^\d{6}-([a-zA-Z0-9]{32})-/', $originalBasename, $matches)) {
+                    $qrIdFromPath = $matches[1];
+                } else {
+                    // Fallback: usar timestamp como identificador único
+                    $qrIdFromPath = 'legacy-' . time();
+                }
+            }
+            
+            // Nombre del archivo final (sin prefijos)
+            $originalBasename = basename($pdfPath);
+            // Si el nombre tiene prefijo de estructura antigua, limpiarlo
+            $finalFilename = preg_replace('/^\d{6}-[a-zA-Z0-9]{32}-/', '', $originalBasename);
+            if ($finalFilename === $originalBasename) {
+                // Si no tenía prefijo, usar el nombre original
+                $finalFilename = $originalBasename;
+            }
+            
+            // Crear estructura de carpetas: final/{TIPO}/{YYYYMM}/{qr_id}/
+            $finalFolder = "{$documentType}/{$monthYear}/{$qrIdFromPath}";
             Storage::disk('final')->makeDirectory($finalFolder);
             
-            // Generar nombre único para el archivo final (mantener formato con mes)
-            // El nombre original ya tiene el mes: 202511-{qr_id}-documento.pdf
-            $finalFilename = Str::random(8) . '-' . $originalBasename;
+            // Ruta completa del PDF final
             $finalPath = "final/{$finalFolder}/{$finalFilename}";
             $fullFinalPath = Storage::disk('final')->path("{$finalFolder}/{$finalFilename}");
 

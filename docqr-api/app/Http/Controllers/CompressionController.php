@@ -45,11 +45,17 @@ class CompressionController extends Controller
                     $monthYear = $matches[1];
                 }
 
-                // Extraer tipo
+                // Extraer tipo de la nueva estructura: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
+                // O estructura antigua: final/{TIPO}/documento.pdf
                 $pathParts = explode('/', $doc->final_path);
                 $type = 'OTROS';
                 if (count($pathParts) >= 2) {
                     $type = strtoupper($pathParts[1] ?? 'OTROS');
+                    // Si pathParts[2] es un año/mes (6 dígitos), es nueva estructura
+                    // En nueva estructura, el mes está en pathParts[2]
+                    if (count($pathParts) >= 3 && preg_match('/^(\d{6})$/', $pathParts[2] ?? '', $matches)) {
+                        $monthYear = $matches[1]; // Ya extraído arriba, pero confirmar
+                    }
                 }
 
                 $key = "{$type}|{$monthYear}";

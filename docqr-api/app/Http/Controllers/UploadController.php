@@ -104,17 +104,18 @@ class UploadController extends Controller
             // Obtener mes y año en formato YYYYMM (ej: 202511 para noviembre 2025)
             $monthYear = now()->format('Ym'); // 202511, 202512, 202601, etc.
             
-            // Crear estructura de carpetas: uploads/{TIPO}/{folder_name}/
-            // Ejemplo: uploads/CE/CE-12345/
-            $storageFolder = "uploads/{$documentType}/{$folderName}";
+            // NUEVA ESTRUCTURA OPTIMIZADA: uploads/{TIPO}/{YYYYMM}/{qr_id}/
+            // Ejemplo: uploads/CE/202511/{qr_id}/documento.pdf
+            // Ventajas: Organización por fecha, cada documento en su carpeta, más escalable
+            $storageFolder = "uploads/{$documentType}/{$monthYear}/{$qrId}";
             
-            // Asegurar que la carpeta existe
+            // Asegurar que la carpeta existe (crea todas las subcarpetas necesarias)
             Storage::disk('local')->makeDirectory($storageFolder);
 
-            // Guardar el PDF con formato: {YYYYMM}-{qr_id}-{nombre_original}
-            // Ejemplo: 202511-abc123...-documento.pdf
+            // Guardar el PDF con nombre original (sin prefijos, más limpio)
+            // Ejemplo: documento.pdf (dentro de uploads/CE/202511/{qr_id}/)
             $originalFilename = $file->getClientOriginalName();
-            $filename = "{$monthYear}-{$qrId}-{$originalFilename}";
+            $filename = $originalFilename; // Nombre original sin modificaciones
             $filePath = $file->storeAs($storageFolder, $filename, 'local');
             $fileSize = $file->getSize();
 

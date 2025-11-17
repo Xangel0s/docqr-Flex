@@ -33,13 +33,15 @@ Route::get('/documents', [DocumentController::class, 'index']);
 Route::get('/documents/stats', [DocumentController::class, 'stats']);
 Route::get('/documents/qr/{qrId}', [DocumentController::class, 'showByQrId']);
 Route::get('/documents/{id}', [DocumentController::class, 'show']);
+Route::put('/documents/qr/{qrId}/folder-name', [DocumentController::class, 'updateFolderName']);
 Route::delete('/documents/{id}', [DocumentController::class, 'destroy']);
 
 // Ruta pública para visualizar PDF con QR (incrementa contador de escaneos)
 Route::get('/view/{hash}', [ViewController::class, 'view']);
 
 // Rutas para servir archivos (PDFs y QRs)
-Route::get('/files/pdf/{qrId}', [FileController::class, 'servePdf']);
+Route::get('/files/pdf/{qrId}', [FileController::class, 'servePdf']); // PDF final (si existe) o original
+Route::get('/files/pdf-original/{qrId}', [FileController::class, 'serveOriginalPdf']); // Siempre PDF original
 Route::get('/files/qr/{qrId}', [FileController::class, 'serveQr']);
 
 // Rutas del sistema

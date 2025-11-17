@@ -114,24 +114,38 @@ class CompressOldDocuments extends Command
         $grouped = [];
 
         foreach ($documents as $doc) {
-            // Extraer tipo del final_path: final/CE/filename.pdf
+            // Extraer tipo y mes de nueva estructura: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
+            // O estructura antigua: final/{TIPO}/documento.pdf
             $pathParts = explode('/', $doc->final_path);
             
             $type = 'OTROS';
+            $monthYear = Carbon::parse($doc->created_at)->format('Ym'); // Por defecto, mes de creación
+            
             if (count($pathParts) >= 2) {
                 $type = strtoupper($pathParts[1] ?? 'OTROS');
+                // Nueva estructura: pathParts[2] es el año/mes (6 dígitos)
+                if (count($pathParts) >= 3 && preg_match('/^(\d{6})$/', $pathParts[2] ?? '', $matches)) {
+                    $monthYear = $matches[1]; // YYYYMM de la ruta
+                } else {
+                    // Estructura antigua: extraer mes del nombre del archivo
+                    $filename = basename($doc->final_path);
+                    if (preg_match('/^(\d{6})-\w+-/', $filename, $matches)) {
+                        $monthYear = $matches[1];
+                    }
+                }
             }
             
-            // Extraer mes del nombre del archivo: 202511-{qr_id}-documento.pdf -> 202511
-            $filename = basename($doc->final_path);
-            $monthYear = Carbon::parse($doc->created_at)->format('Ym'); // Formato YYYYMM
-            
-            if (preg_match('/^(\d{8})-(\d{6})-\w+-/', $filename, $matches)) {
-                // Si el formato es: {random}-{YYYYMM}-{qr_id}-...
-                $monthYear = $matches[2];
-            } elseif (preg_match('/^(\d{6})-\w+-/', $filename, $matches)) {
-                // Si el formato es: {YYYYMM}-{qr_id}-...
-                $monthYear = $matches[1];
+            // Si no se pudo extraer mes de la ruta (estructura antigua), intentar del nombre
+            if ($monthYear === Carbon::parse($doc->created_at)->format('Ym')) {
+                // No se extrajo de la ruta, intentar del nombre del archivo
+                $filename = basename($doc->final_path);
+                if (preg_match('/^(\d{8})-(\d{6})-\w+-/', $filename, $matches)) {
+                    // Formato antiguo: {random}-{YYYYMM}-{qr_id}-...
+                    $monthYear = $matches[2];
+                } elseif (preg_match('/^(\d{6})-\w+-/', $filename, $matches)) {
+                    // Formato antiguo: {YYYYMM}-{qr_id}-...
+                    $monthYear = $matches[1];
+                }
             }
 
             $key = "{$type}|{$monthYear}";

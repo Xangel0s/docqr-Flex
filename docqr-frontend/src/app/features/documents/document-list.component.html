@@ -309,8 +309,8 @@
                     </button>
                     <button 
                       type="button"
-                      (click)="deleteDocument(doc)"
-                      class="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 transition-colors"
+                      (click)="openDeleteModal(doc)"
+                      class="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 transition-all active:scale-95"
                       title="Eliminar documento">
                       <span class="material-symbols-outlined text-red-600 text-lg">delete</span>
                     </button>
@@ -352,4 +352,38 @@
       </div>
     </main>
   </div>
+
+  <!-- Modal de Vista Previa del PDF -->
+  <app-pdf-preview-modal
+    [isOpen]="previewModalOpen"
+    [pdfUrl]="previewPdfUrl"
+    [documentName]="previewDocumentName"
+    (close)="closePreviewModal()">
+  </app-pdf-preview-modal>
+
+  <!-- Modal de confirmación de eliminación -->
+  <app-delete-confirm-modal
+    [isOpen]="deleteModalOpen"
+    [documentName]="documentToDelete?.original_filename || ''"
+    [documentType]="documentToDelete ? getDocumentType(documentToDelete.folder_name) : ''"
+    (confirm)="confirmDelete()"
+    (cancel)="closeDeleteModal()">
+  </app-delete-confirm-modal>
+
+  <!-- Modal de selección de tipo de edición -->
+  <app-edit-option-modal
+    [isOpen]="editOptionModalOpen"
+    [documentName]="documentToEdit?.original_filename || ''"
+    (selectOption)="onEditOptionSelected($event)"
+    (cancel)="closeEditOptionModal()">
+  </app-edit-option-modal>
+
+  <!-- Modal de edición de nombre de carpeta -->
+  <app-edit-folder-modal
+    [isOpen]="editFolderModalOpen"
+    [currentFolderName]="documentToEdit?.folder_name || ''"
+    [documentName]="documentToEdit?.original_filename || ''"
+    (save)="saveFolderName($event)"
+    (cancel)="closeEditFolderModal()">
+  </app-edit-folder-modal>
 </div>
