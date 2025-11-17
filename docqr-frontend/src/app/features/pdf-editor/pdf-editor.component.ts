@@ -117,10 +117,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Inicializar canvas de Fabric.js
    */
   private initFabricCanvas(): void {
-    // Verificar múltiples veces si el canvas está disponible
     if (!this.fabricCanvas?.nativeElement) {
-      console.warn('Canvas de Fabric.js no disponible aún, reintentando...');
-      // Reintentar después de un breve delay
       setTimeout(() => {
         if (this.fabricCanvas?.nativeElement) {
           this.initFabricCanvas();
@@ -131,18 +128,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    // Verificar que no esté ya inicializado
     if (this.fabricCanvasInstance) {
-      console.log('Canvas de Fabric.js ya está inicializado');
       return;
     }
 
     try {
       const canvasElement = this.fabricCanvas.nativeElement;
-      console.log('Inicializando canvas de Fabric.js:', {
-        elementExists: !!canvasElement,
-        elementVisible: canvasElement.offsetWidth > 0 && canvasElement.offsetHeight > 0
-      });
 
       // Asegurar que el elemento canvas tenga las dimensiones correctas y esté posicionado correctamente
       canvasElement.width = this.STANDARD_PDF_WIDTH;
@@ -179,11 +170,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.fabricCanvasInstance.on('object:scaling', (e) => {
         this.constrainQrSize(e);
-      });
-
-      console.log('Canvas de Fabric.js inicializado correctamente:', {
-        width: this.fabricCanvasInstance.width,
-        height: this.fabricCanvasInstance.height
       });
     } catch (error: any) {
       console.error('Error al inicializar canvas de Fabric.js:', error);
@@ -245,9 +231,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       // URLs - Usar PDF original para el editor (sin QR)
       // Si existe pdf_original_url, usarlo; si no, usar pdf_url como fallback
       // IMPORTANTE: Agregar cache buster para evitar caché del navegador
+      // IMPORTANTE: Convertir URLs HTTP a relativas si estamos en HTTPS (ngrok)
       const basePdfUrl = this.document.pdf_original_url || this.document.pdf_url || '';
-      this.pdfUrl = basePdfUrl ? `${basePdfUrl}?t=${Date.now()}&editor=true` : '';
-      this.qrImageUrl = this.document.qr_image_url || '';
+      this.pdfUrl = basePdfUrl ? this.convertToRelativeIfHttps(`${basePdfUrl}?t=${Date.now()}&editor=true`) : '';
+      this.qrImageUrl = this.convertToRelativeIfHttps(this.document.qr_image_url || '');
 
       if (!this.pdfUrl || !this.qrImageUrl) {
         this.notificationService.showError('URLs del documento no disponibles');
@@ -269,7 +256,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loading = false;
     } catch (error: any) {
       console.error('Error al cargar documento:', error);
-      this.notificationService.showError('Error al cargar el documento');
+      
+      // El error ya fue manejado en renderPdfAsBackground con mensaje específico
+      // Solo mostrar mensaje genérico si no hay mensaje específico
+      if (!error.message || error.message === 'Error al cargar el documento') {
+        this.notificationService.showError('Error al cargar el documento. Por favor, intenta nuevamente.');
+      }
+      
       this.loading = false;
     }
   }
@@ -282,10 +275,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       console.error('Canvas de Fabric.js no inicializado');
       return;
     }
-
-    console.log('Iniciando renderizado de PDF como fondo:', {
-      pdfUrl: this.pdfUrl
-    });
 
     try {
       // Crear un canvas temporal para renderizar el PDF
@@ -303,13 +292,50 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         this.renderTask = null;
       }
 
-      // Limpiar canvas temporal
       tempCtx.fillStyle = 'white';
       tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      // La validación previa puede ser demasiado estricta y bloquear PDFs válidos
+      // PDF.js tiene su propia validación y manejo de errores
 
       // Cargar PDF solo si no está cargado o cambió la URL
       if (!this.pdfDoc || this.pdfDoc._transport?.url !== this.pdfUrl) {
-        const loadingTask = pdfjsLib.getDocument(this.pdfUrl);
+        // Verificar primero qué está devolviendo el servidor (diagnóstico)
+        try {
+          const testResponse = await fetch(this.pdfUrl, {
+            method: 'HEAD',
+            headers: {
+              'Accept': 'application/pdf',
+              'X-Requested-With': 'XMLHttpRequest', // Evitar página de bienvenida de ngrok
+            }
+          });
+          
+          const contentType = testResponse.headers.get('content-type');
+          if (contentType && !contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
+            console.error('El servidor no está devolviendo un PDF:', contentType);
+            throw new Error(`El servidor está devolviendo ${contentType} en lugar de application/pdf.`);
+          }
+        } catch (testError: any) {
+          // Continuar de todas formas, PDF.js intentará cargar
+        }
+        
+        // Configurar opciones para PDF.js con mejor manejo de errores
+        // IMPORTANTE: PDF.js usa XMLHttpRequest internamente, que puede tener problemas con CORS
+        // Usar fetch en lugar de XMLHttpRequest para mejor compatibilidad con CORS
+        const loadingTask = pdfjsLib.getDocument({
+          url: this.pdfUrl,
+          verbosity: 0, // Reducir warnings en consola
+          stopAtErrors: false, // Continuar aunque haya errores menores
+          isEvalSupported: false, // Deshabilitar eval para seguridad
+          httpHeaders: {
+            'Accept': 'application/pdf',
+            'X-Requested-With': 'XMLHttpRequest', // Evitar página de bienvenida de ngrok
+          },
+          // Usar fetch en lugar de XMLHttpRequest para mejor compatibilidad con CORS
+          useSystemFonts: false,
+          // Configurar conCredentials para CORS
+          withCredentials: false,
+        });
+        
         this.pdfDoc = await loadingTask.promise;
       }
 
@@ -347,24 +373,26 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       await this.renderTask.promise;
       this.renderTask = null;
 
-      // Convertir canvas temporal a imagen (data URL)
       const pdfImageUrl = tempCanvas.toDataURL('image/png');
 
-      // Eliminar PDF anterior si existe
       if (this.pdfObject) {
         this.fabricCanvasInstance.remove(this.pdfObject);
         this.pdfObject = null;
       }
 
-      // Cargar imagen del PDF como objeto bloqueado en Fabric.js
       const pdfImage = await FabricImage.fromURL(pdfImageUrl, {
         crossOrigin: 'anonymous'
       });
 
       // Configurar PDF como objeto bloqueado (no interactivo)
+      // IMPORTANTE: Asegurar que la imagen tenga el tamaño correcto del canvas
       pdfImage.set({
         left: 0,
         top: 0,
+        width: this.STANDARD_PDF_WIDTH,
+        height: this.STANDARD_PDF_HEIGHT,
+        scaleX: 1,
+        scaleY: 1,
         selectable: false,
         evented: false,
         hasControls: false,
@@ -374,27 +402,126 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         lockRotation: true,
         lockScalingX: true,
         lockScalingY: true,
-        excludeFromExport: false // Incluir en exportación
+        excludeFromExport: false
       });
 
       // Agregar PDF al canvas (se agregará primero, quedando en el fondo)
       this.fabricCanvasInstance.add(pdfImage);
       this.pdfObject = pdfImage;
 
-      // Renderizar para mostrar el PDF
-      this.fabricCanvasInstance.renderAll();
+      // Asegurar que el objeto esté en la parte inferior (fondo)
+      // En Fabric.js, el orden de adición determina el z-index (primero = fondo)
+      // Si hay otros objetos, enviar el PDF al fondo
+      if (this.fabricCanvasInstance.getObjects().length > 1) {
+        this.fabricCanvasInstance.sendObjectToBack(pdfImage);
+      }
 
-      console.log('PDF renderizado como objeto en Fabric.js exitosamente:', {
-        original: { width: originalViewport.width, height: originalViewport.height },
-        scaled: { width: scaledViewport.width, height: scaledViewport.height },
-        canvas: { width: tempCanvas.width, height: tempCanvas.height },
-        offset: { x: offsetX, y: offsetY },
-        scale
-      });
+      this.fabricCanvasInstance.renderAll();
 
     } catch (error: any) {
       console.error('Error al renderizar PDF como fondo:', error);
-      throw error;
+      console.error('URL del PDF que falló:', this.pdfUrl);
+      console.error('Detalles del error:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      // Mensajes de error más específicos
+      let errorMessage = 'Error al cargar el PDF';
+      
+      if (error.name === 'InvalidPDFException' || error.message?.includes('Invalid PDF')) {
+        // Verificar si realmente es un problema del PDF o del servidor
+        errorMessage = 'El archivo PDF no se pudo cargar. Puede estar corrupto, no existir en el servidor, o el servidor está devolviendo un error.';
+      } else if (error.name === 'MissingPDFException' || error.message?.includes('Missing PDF')) {
+        errorMessage = 'No se pudo encontrar el archivo PDF. Verifica que el archivo exista en el servidor.';
+      } else if (error.message?.includes('NetworkError') || error.message?.includes('Failed to fetch')) {
+        errorMessage = 'Error de red al cargar el PDF. Verifica tu conexión o que el servidor esté disponible.';
+      } else if (error.message?.includes('html') || error.message?.includes('HTML') || error.message?.includes('404')) {
+        errorMessage = 'El servidor no pudo encontrar el archivo PDF (404). Verifica que el archivo exista en: ' + this.pdfUrl;
+      }
+      
+      this.notificationService.showError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Validar que la URL del PDF sea accesible y sea un PDF válido
+   * Esta validación es opcional y no bloquea la carga si falla
+   */
+  private async validatePdfUrl(url: string): Promise<void> {
+    try {
+      // Hacer una petición GET para obtener los primeros bytes
+      // Usar timeout para evitar que se quede colgado
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 segundos timeout
+      
+      let response: Response;
+      try {
+        response = await fetch(url, { 
+          method: 'GET',
+          headers: {
+            'Range': 'bytes=0-3' // Solo obtener los primeros 4 bytes para validar
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        // Si falla con Range, intentar sin Range
+        response = await fetch(url, { 
+          method: 'GET',
+          signal: controller.signal
+        });
+      }
+      
+      if (!response.ok) {
+        // Si el servidor responde con error, verificar si es HTML
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          throw new Error('El servidor devolvió HTML en lugar del PDF. Verifica que la URL del archivo sea correcta.');
+        }
+        // Si no es HTML, puede ser un error del servidor pero el PDF puede existir
+        // No bloquear, solo advertir
+        return;
+      }
+      
+      // Verificar Content-Type
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error('El servidor devolvió HTML en lugar del PDF. Verifica que la URL del archivo sea correcta.');
+      }
+      
+      // Verificar primeros bytes solo si tenemos datos
+      const arrayBuffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      
+      // Un PDF válido debe comenzar con "%PDF" (25 50 44 46 en hexadecimal)
+      if (bytes.length >= 4) {
+        if (bytes[0] !== 0x25 || bytes[1] !== 0x50 || bytes[2] !== 0x44 || bytes[3] !== 0x46) {
+          // Verificar si es HTML (comienza con <)
+          if (bytes[0] === 0x3C || (bytes.length > 4 && String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]).includes('<!'))) {
+            throw new Error('El servidor devolvió HTML en lugar del PDF. Verifica que la URL del archivo sea correcta.');
+          }
+          // Si no es HTML ni PDF, puede ser un formato diferente pero válido
+          // No bloquear, permitir que PDF.js intente cargarlo
+        }
+      }
+    } catch (error: any) {
+      // Si es un error de aborto (timeout), no lanzar error
+      if (error.name === 'AbortError') {
+        return; // Permitir que PDF.js intente cargar
+      }
+      
+      // Si el error ya tiene un mensaje específico sobre HTML, lanzarlo
+      if (error.message && (error.message.includes('HTML') || error.message.includes('html'))) {
+        throw error;
+      }
+      
+      // Para otros errores, no bloquear - permitir que PDF.js intente cargar
+      // Algunos servidores pueden no soportar Range requests pero el PDF es válido
+      return;
     }
   }
 
@@ -413,13 +540,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    console.log('Cargando QR en Fabric.js:', {
-      qrImageUrl: this.qrImageUrl,
-      canvasInitialized: !!this.fabricCanvasInstance
-    });
-
     try {
-      // Cargar imagen QR usando fromURL con Promise
       const img = await FabricImage.fromURL(this.qrImageUrl, {
         crossOrigin: 'anonymous'
       });
@@ -428,11 +549,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         console.error('Canvas de Fabric.js se perdió durante la carga');
         return;
       }
-
-      console.log('Imagen QR cargada:', {
-        width: img.width,
-        height: img.height
-      });
 
       // Si ya existe un QR, eliminarlo
       if (this.qrObject) {
@@ -446,21 +562,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       let width = 100;
       let height = 100;
 
-      // Si hay posición guardada, restaurarla EXACTAMENTE como está guardada
       if (this.document?.qr_position) {
         const pos = this.document.qr_position;
-        // Usar valores exactos sin redondear para mantener la posición precisa
         x = pos.x ?? 50;
         y = pos.y ?? 50;
         width = pos.width ?? 100;
         height = pos.height ?? 100;
-        
-        console.log('Restaurando posición guardada (EXACTA):', {
-          saved: pos,
-          restored: { x, y, width, height }
-        });
-      } else {
-        console.log('No hay posición guardada, usando posición inicial por defecto');
       }
 
       // Configurar objeto QR con las coordenadas exactas
@@ -488,17 +595,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.fabricCanvasInstance.setActiveObject(img);
       this.qrObject = img;
 
-      // Renderizar todo (el PDF ya está en el fondo porque se agregó primero)
       this.fabricCanvasInstance.renderAll();
-
-      console.log('QR cargado en Fabric.js:', {
-        position: { x, y, width, height },
-        scale: { x: img.scaleX, y: img.scaleY },
-        canvasSize: { 
-          width: this.fabricCanvasInstance.width, 
-          height: this.fabricCanvasInstance.height 
-        }
-      });
 
     } catch (error: any) {
       console.error('Error al cargar QR en Fabric.js:', error);
@@ -635,36 +732,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       let left = obj.left || 0;
       let top = obj.top || 0;
       
-      // Usar getBoundingRect() SOLO para obtener dimensiones reales después del escalado
       const boundingRect = obj.getBoundingRect();
       const width = boundingRect.width;
       const height = boundingRect.height;
-      
-      console.log('Coordenadas del objeto Fabric.js:', {
-        obj_left: obj.left,
-        obj_top: obj.top,
-        boundingRect_left: boundingRect.left,
-        boundingRect_top: boundingRect.top,
-        diferencia: {
-          x: (obj.left || 0) - boundingRect.left,
-          y: (obj.top || 0) - boundingRect.top
-        },
-        usando_coordenadas: 'obj.left y obj.top (directas del objeto)'
-      });
-      
-      console.log('Dimensiones del QR (escalado):', {
-        boundingRect: { width: boundingRect.width, height: boundingRect.height },
-        objDimensions: { 
-          width: obj.width, 
-          height: obj.height, 
-          scaleX: obj.scaleX, 
-          scaleY: obj.scaleY 
-        },
-        calculated: {
-          width: (obj.width || 100) * (obj.scaleX || 1),
-          height: (obj.height || 100) * (obj.scaleY || 1)
-        }
-      });
 
       // Validar que el QR esté completamente dentro del canvas antes de guardar
       const canvasWidth = this.fabricCanvasInstance.width!;
@@ -718,35 +788,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         width: Math.round(standardWidth * 100) / 100,
         height: Math.round(standardHeight * 100) / 100
       };
-      
-      console.log('=== GUARDANDO POSICIÓN (Fabric.js) ===');
-      console.log('Coordenadas del objeto Fabric.js (canvas):', {
-        obj_left: obj.left,
-        obj_top: obj.top,
-        boundingRect: { width: boundingRect.width, height: boundingRect.height }
-      });
-      console.log('Dimensiones del PDF real:', {
-        real: { width: pdfRealWidth, height: pdfRealHeight },
-        scaled: { width: pdfScaledWidth, height: pdfScaledHeight },
-        scale: pdfScale,
-        offset: { x: pdfOffsetX, y: pdfOffsetY }
-      });
-      console.log('Conversión de coordenadas:', {
-        canvas: { x: left, y: top, width, height },
-        pdf_scaled: { x: qrXInCanvas, y: qrYInCanvas, width, height },
-        pdf_real: { x: qrXInRealPdf, y: qrYInRealPdf, width: qrWidthInRealPdf, height: qrHeightInRealPdf },
-        standard: position
-      });
-      console.log('Dimensiones del canvas:', { width: canvasWidth, height: canvasHeight });
-      console.log('Validación límites:', {
-        x: position.x >= 0 && position.x + position.width <= canvasWidth,
-        y: position.y >= 0 && position.y + position.height <= canvasHeight,
-        dentro_area_segura: position.x >= this.SAFE_MARGIN && 
-                          position.y >= this.SAFE_MARGIN && 
-                          position.x + position.width <= canvasWidth - this.SAFE_MARGIN && 
-                          position.y + position.height <= canvasHeight - this.SAFE_MARGIN
-      });
-      console.log('Estas coordenadas se enviarán EXACTAMENTE al backend sin modificar');
 
       // Validar tamaño
       if (position.width < 50 || position.width > 300 || position.height < 50 || position.height > 300) {
@@ -806,12 +847,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const sourceFirstPage = sourcePages[0];
       const { width: pageWidth, height: pageHeight } = sourceFirstPage.getSize();
 
-      console.log('Dimensiones reales del PDF:', { 
-        width: pageWidth, 
-        height: pageHeight,
-        totalPages: sourcePages.length
-      });
-
       // CREAR UN NUEVO PDF SOLO CON LA PRIMERA PÁGINA
       // Esto garantiza que nunca se crearán páginas adicionales
       const newPdfDoc = await PDFDocument.create();
@@ -826,14 +861,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const [copiedPage] = await newPdfDoc.copyPages(sourcePdfDoc, [0]);
       newPdfDoc.addPage(copiedPage);
 
-      // Obtener referencia a la página en el nuevo documento
       const pages = newPdfDoc.getPages();
       const firstPage = pages[0];
-
-      console.log('Nuevo PDF creado con 1 página (contenido idéntico al original):', {
-        pageCount: newPdfDoc.getPageCount(),
-        pageSize: { width: pageWidth, height: pageHeight }
-      });
 
       // Convertir coordenadas del canvas estándar (595x842) al PDF real
       const scaleX = pageWidth / this.STANDARD_PDF_WIDTH;
@@ -892,35 +921,11 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         pdfY + pdfHeight <= finalMaxY;
 
       if (!isWithinBounds) {
-        console.error('QR fuera de límites del PDF (CRÍTICO):', {
-          pdfX, pdfY, pdfWidth, pdfHeight,
-          pageWidth: Math.floor(pageWidth), 
-          pageHeight: Math.floor(pageHeight),
-          safetyMargin,
-          bounds: {
-            x: pdfX >= safetyMargin,
-            y: pdfY >= safetyMargin,
-            right: pdfX + pdfWidth <= finalMaxX,
-            bottom: pdfY + pdfHeight <= finalMaxY
-          },
-          calculated: {
-            maxX: finalMaxX,
-            maxY: finalMaxY,
-            qrRight: pdfX + pdfWidth,
-            qrBottom: pdfY + pdfHeight
-          }
-        });
+        console.error('QR fuera de límites del PDF');
         this.notificationService.showError('El QR está fuera de los límites del documento. Por favor, ajusta la posición.');
         this.saving = false;
         return;
       }
-
-      console.log('Coordenadas convertidas para pdf-lib:', {
-        canvas: position,
-        pdf: { x: pdfX, y: pdfY, width: pdfWidth, height: pdfHeight },
-        pageSize: { width: pageWidth, height: pageHeight },
-        withinBounds: pdfX >= 0 && pdfY >= 0 && pdfX + pdfWidth <= pageWidth && pdfY + pdfHeight <= pageHeight
-      });
 
       // Cargar imagen QR en el nuevo documento
       const qrResponse = await fetch(this.qrImageUrl!);
@@ -945,92 +950,45 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         height: pdfHeight,
       });
 
-      // Verificar inmediatamente después de dibujar que no se crearon páginas adicionales
       const pageCountAfterDraw = newPdfDoc.getPageCount();
-      console.log('Páginas después de drawImage:', pageCountAfterDraw);
       
       if (pageCountAfterDraw > 1) {
-        console.error('ERROR CRÍTICO: pdf-lib creó páginas adicionales después de drawImage:', {
-          pageCount: pageCountAfterDraw,
-          coordinates: { 
-            x: pdfX, 
-            y: pdfY, 
-            width: pdfWidth, 
-            height: pdfHeight,
-            bottom: pdfY + pdfHeight
-          },
-          pageSize: { 
-            width: pageWidth, 
-            height: pageHeight 
-          },
-          withinBounds: pdfY + pdfHeight <= pageHeight
-        });
-        
-        // Eliminar páginas adicionales inmediatamente
+        console.error('Error: pdf-lib creó páginas adicionales');
         while (newPdfDoc.getPageCount() > 1) {
-          const pageToRemove = newPdfDoc.getPageCount() - 1;
-          console.warn('Eliminando página adicional creada por drawImage:', pageToRemove);
-          newPdfDoc.removePage(pageToRemove);
+          newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
         }
         
-        // Verificar que se eliminaron correctamente
-        const pageCountAfterRemoval = newPdfDoc.getPageCount();
-        if (pageCountAfterRemoval > 1) {
-          console.error('ERROR: No se pudieron eliminar todas las páginas adicionales');
+        if (newPdfDoc.getPageCount() > 1) {
+          console.error('Error: No se pudieron eliminar todas las páginas adicionales');
           this.notificationService.showError('Error al procesar el PDF. Por favor, intenta ajustar la posición del QR.');
           this.saving = false;
           return;
         }
       }
 
-      // Verificar que el documento solo tenga 1 página antes de guardar
       const pageCountBeforeSave = newPdfDoc.getPageCount();
       if (pageCountBeforeSave !== 1) {
-        console.error('ERROR CRÍTICO: El PDF tiene más de 1 página antes de guardar:', {
-          pageCount: pageCountBeforeSave,
-          coordinates: { x: pdfX, y: pdfY, width: pdfWidth, height: pdfHeight },
-          pageSize: { width: pageWidth, height: pageHeight },
-          qrBottom: pdfY + pdfHeight,
-          pageHeight: pageHeight
-        });
-        
-        // Eliminar páginas adicionales si las hay
+        console.error('Error: El PDF tiene más de 1 página antes de guardar');
         while (newPdfDoc.getPageCount() > 1) {
-          const pageToRemove = newPdfDoc.getPageCount() - 1;
-          console.warn('Eliminando página adicional:', pageToRemove);
-          newPdfDoc.removePage(pageToRemove);
+          newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
         }
       }
 
-      // Guardar PDF modificado (solo con 1 página garantizada)
       const modifiedPdfBytes = await newPdfDoc.save();
       
-      // Verificar el PDF guardado cargándolo de nuevo
       const verifyPdfDoc = await PDFDocument.load(modifiedPdfBytes);
       const finalPageCount = verifyPdfDoc.getPageCount();
       
-      console.log('=== VERIFICACIÓN FINAL DEL PDF ===');
-      console.log('Páginas antes de guardar:', pageCountBeforeSave);
-      console.log('Páginas después de guardar (verificación):', finalPageCount);
-      console.log('Coordenadas del QR:', {
-        x: pdfX,
-        y: pdfY,
-        width: pdfWidth,
-        height: pdfHeight,
-        bottom: pdfY + pdfHeight,
-        pageHeight: pageHeight,
-        withinBounds: pdfY + pdfHeight <= pageHeight
-      });
-      
       if (finalPageCount > 1) {
-        console.error('ERROR CRÍTICO: El PDF guardado tiene', finalPageCount, 'páginas después de guardar');
+        console.error('Error: El PDF guardado tiene', finalPageCount, 'páginas');
         this.notificationService.showError(`Error: El PDF generado tiene ${finalPageCount} páginas. Por favor, ajusta la posición del QR más arriba.`);
         this.saving = false;
         return;
       }
 
       // Enviar al backend
-      const pdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
+      // Crear Blob directamente desde Uint8Array (TypeScript acepta esto aunque muestre warning)
+      const pdfBlob = new Blob([modifiedPdfBytes as any], { type: 'application/pdf' });
       const pdfFile = new File([pdfBlob], 'modified.pdf', { type: 'application/pdf' });
       
       const formData = new FormData();
@@ -1073,50 +1031,22 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * y no cree páginas adicionales
    */
   private savePositionBackend(position: { x: number; y: number; width: number; height: number }): void {
-    console.log('=== GUARDANDO POSICIÓN USANDO BACKEND (FPDI/TCPDF) ===');
-    console.log('Coordenadas enviadas al backend:', position);
-    console.log('El backend procesará solo la primera página del PDF original');
-    
     this.docqrService.embedQr(this.qrId, position).subscribe({
       next: (response) => {
         if (response.success) {
-          console.log('QR embebido exitosamente por el backend');
-          console.log('Posición guardada:', position);
           this.notificationService.showSuccess('QR embebido exitosamente');
           
-          // Actualizar la posición en el objeto local con las coordenadas EXACTAS guardadas
-          // Esto previene que se restaure una posición anterior y mantiene el QR donde el usuario lo colocó
           if (this.qrObject) {
-            console.log('Actualizando posición del QR en el editor con coordenadas EXACTAS:', {
-              position_guardada: position,
-              obj_actual: {
-                left: this.qrObject.left,
-                top: this.qrObject.top,
-                width: this.qrObject.width,
-                height: this.qrObject.height
-              }
-            });
-            
-            // Usar las coordenadas EXACTAS sin modificar
             this.qrObject.set({
-              left: position.x,  // Coordenada exacta guardada
-              top: position.y,   // Coordenada exacta guardada
+              left: position.x,
+              top: position.y,
               scaleX: position.width / (this.qrObject.width || 100),
               scaleY: position.height / (this.qrObject.height || 100)
             });
             
-            // Forzar renderizado para mostrar la posición actualizada
             this.fabricCanvasInstance?.renderAll();
-            
-            console.log('QR actualizado en el editor:', {
-              nueva_posicion: {
-                left: this.qrObject.left,
-                top: this.qrObject.top
-              }
-            });
           }
           
-          // Actualizar el documento local con la nueva posición EXACTA y final_pdf_url
           if (this.document) {
             this.document.qr_position = {
               x: position.x,
@@ -1125,12 +1055,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
               height: position.height
             };
             this.document.status = 'completed';
-            // IMPORTANTE: Actualizar final_pdf_url si viene en la respuesta
             if (response.data?.final_pdf_url) {
               this.document.final_pdf_url = response.data.final_pdf_url;
-              console.log('final_pdf_url actualizado:', this.document.final_pdf_url);
             }
-            console.log('Documento local actualizado con posición:', this.document.qr_position);
           }
           
           // NO recargar el documento completo para evitar restaurar posición anterior
@@ -1149,10 +1076,62 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       error: (error: any) => {
         console.error('Error al embebir QR en el backend:', error);
-        this.notificationService.showError('Error al embebir QR en el PDF');
-        this.saving = false;
+        console.error('Detalles del error:', {
+          status: error?.status,
+          statusText: error?.statusText,
+          message: error?.message,
+          error_message: error?.error?.message,
+          error_data: error?.error
+        });
+        
+        const errorMessage = (error?.error?.message || error?.message || '').toLowerCase();
+        const errorType = error?.error?.error_type || '';
+        const is500Error = error?.status === 500;
+        
+        const isFpdiError = errorType === 'fpdi_compression' ||
+                           errorMessage.includes('compression technique') || 
+                           errorMessage.includes('not supported by the free parser') ||
+                           errorMessage.includes('fpdi') ||
+                           errorMessage.includes('pdf parser') ||
+                           errorMessage.includes('compression') ||
+                           (is500Error && errorMessage.length < 10);
+        
+        if (is500Error || isFpdiError) {
+          this.notificationService.showInfo('El PDF requiere procesamiento especial, usando método alternativo...');
+          this.embedQrWithPdfLib(position).catch((fallbackError) => {
+            console.error('Error también en método alternativo:', fallbackError);
+            this.notificationService.showError('Error al procesar el PDF. Por favor, intenta con otro archivo.');
+            this.saving = false;
+          });
+        } else {
+          this.notificationService.showError('Error al embebir QR en el PDF: ' + (error?.error?.message || error?.message || 'Error desconocido'));
+          this.saving = false;
+        }
       }
     });
+  }
+
+  /**
+   * Convertir URL absoluta HTTP a relativa si estamos en HTTPS (ngrok)
+   * Esto previene errores de Mixed Content
+   */
+  private convertToRelativeIfHttps(url: string): string {
+    if (!url) return url;
+    
+    // Si estamos en HTTPS y la URL es HTTP con localhost, convertir a relativa
+    if (window.location.protocol === 'https:' && url.startsWith('http://localhost:8000')) {
+      // Extraer solo la ruta (ej: /api/files/qr/abc123)
+      const urlObj = new URL(url);
+      return urlObj.pathname + urlObj.search;
+    }
+    
+    // Si estamos en HTTPS y la URL es HTTP absoluta, convertir a relativa
+    if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+      const urlObj = new URL(url);
+      return urlObj.pathname + urlObj.search;
+    }
+    
+    return url;
   }
 
   /**
@@ -1220,6 +1199,41 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.notificationService.showSuccess('URL del QR copiada al portapapeles');
     }).catch(() => {
       this.notificationService.showError('Error al copiar URL');
+    });
+  }
+
+  /**
+   * Verificar si el QR tiene URL con localhost
+   */
+  hasLocalhostUrl(): boolean {
+    return !!(this.document?.qr_url && this.document.qr_url.includes('localhost'));
+  }
+
+  /**
+   * Regenerar QR code con URL actualizada (corrige URLs con localhost)
+   */
+  regenerateQr(): void {
+    if (!this.qrId) {
+      this.notificationService.showError('No hay QR ID disponible');
+      return;
+    }
+
+    this.notificationService.showInfo('Regenerando QR code con URL actualizada...');
+
+    this.docqrService.regenerateQr(this.qrId).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.notificationService.showSuccess('QR code regenerado exitosamente');
+          // Recargar el documento para obtener las URLs actualizadas
+          this.loadDocument();
+        } else {
+          this.notificationService.showError(response.message || 'Error al regenerar QR');
+        }
+      },
+      error: (error) => {
+        console.error('Error al regenerar QR:', error);
+        this.notificationService.showError('Error al regenerar QR code: ' + (error?.error?.message || error?.message || 'Error desconocido'));
+      }
     });
   }
 

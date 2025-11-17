@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Controlador para embebir QR en PDF con posición específica
@@ -166,6 +167,9 @@ class EmbedController extends Controller
                     'status' => 'completed',
                 ]);
             });
+            
+            // Invalidar cache de estadísticas cuando se completa un documento (fuera de la transacción)
+            Cache::forget('documents_stats_v2');
 
             // IMPORTANTE: NO eliminar el PDF original inmediatamente
             // El editor necesita el PDF original para reposicionar el QR
@@ -190,7 +194,8 @@ class EmbedController extends Controller
             ]);
 
             // URL pública del PDF final a través de la API (escalable para producción)
-            $finalUrl = url("/api/files/pdf/{$qrFile->qr_id}");
+            // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
+            $finalUrl = \App\Helpers\UrlHelper::url("/api/files/pdf/{$qrFile->qr_id}", $request);
 
             return response()->json([
                 'success' => true,
@@ -203,23 +208,34 @@ class EmbedController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error al embebir QR: ' . $e->getMessage(), [
+            $errorMessage = $e->getMessage();
+            Log::error('Error al embebir QR: ' . $errorMessage, [
                 'qr_id' => $request->input('qr_id'),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'error_class' => get_class($e),
+                'error_code' => $e->getCode()
             ]);
             
             // Actualizar estado a failed (solo si el documento existe y no hay error de BD)
             if (isset($qrFile) && $qrFile->exists) {
                 try {
                     $qrFile->update(['status' => 'failed']);
+                    
+                    // Invalidar cache de estadísticas cuando falla un documento
+                    Cache::forget('documents_stats_v2');
                 } catch (\Exception $updateError) {
                     Log::error('Error al actualizar estado a failed: ' . $updateError->getMessage());
                 }
             }
 
+            // IMPORTANTE: Devolver el mensaje completo para que el frontend pueda detectar errores de FPDI
+            // El mensaje debe incluir palabras clave como "compression", "FPDI", "not supported by the free parser"
             return response()->json([
                 'success' => false,
-                'message' => 'Error al procesar el PDF: ' . $e->getMessage()
+                'message' => $errorMessage, // Mensaje completo sin truncar
+                'error_type' => stripos($errorMessage, 'compression') !== false || 
+                               stripos($errorMessage, 'not supported by the free parser') !== false ||
+                               stripos($errorMessage, 'FPDI') !== false ? 'fpdi_compression' : 'unknown'
             ], 500);
         }
     }
@@ -313,7 +329,25 @@ class EmbedController extends Controller
             
             try {
                 $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-                $pageCount = $pdf->setSourceFile($pdfFile->getRealPath());
+                // Intentar abrir el PDF (si está protegido con contraseña, fallará aquí)
+                try {
+                    $pageCount = $pdf->setSourceFile($pdfFile->getRealPath());
+                } catch (\setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException $e) {
+                    $errorMsg = $e->getMessage();
+                    if (stripos($errorMsg, 'password') !== false || 
+                        stripos($errorMsg, 'encrypted') !== false) {
+                        Log::error('PDF protegido con contraseña recibido desde frontend:', [
+                            'qr_id' => $qrId,
+                            'error' => $errorMsg
+                        ]);
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'El PDF está protegido con contraseña. Por favor, desbloquee el PDF antes de subirlo.',
+                            'error_type' => 'password_protected'
+                        ], 422);
+                    }
+                    throw $e;
+                }
                 
                 Log::info('PDF recibido para procesamiento:', [
                     'qr_id' => $qrId,
@@ -423,6 +457,9 @@ class EmbedController extends Controller
                     'status' => 'completed',
                 ]);
             });
+            
+            // Invalidar cache de estadísticas cuando se completa un documento (fuera de la transacción)
+            Cache::forget('documents_stats_v2');
 
             // Eliminar PDF original (solo el archivo físico, no actualizar file_path en BD)
             if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
@@ -437,8 +474,9 @@ class EmbedController extends Controller
                 }
             }
 
-            // URL pública del PDF final
-            $finalUrl = url("/api/files/pdf/{$qrFile->qr_id}");
+            // URL pública del PDF final a través de la API (escalable para producción)
+            // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
+            $finalUrl = \App\Helpers\UrlHelper::url("/api/files/pdf/{$qrFile->qr_id}", $request);
 
             Log::info('PDF modificado con pdf-lib guardado exitosamente:', [
                 'qr_id' => $qrId,

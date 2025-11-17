@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Controlador para subir PDFs y generar códigos QR
@@ -119,9 +120,8 @@ class UploadController extends Controller
             $filePath = $file->storeAs($storageFolder, $filename, 'local');
             $fileSize = $file->getSize();
 
-            // Generar URL para el QR
-            $baseUrl = config('app.url');
-            $qrUrl = "{$baseUrl}/api/view/{$qrId}";
+            // Generar URL para el QR (usar helper que respeta protocolo de solicitud)
+            $qrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
 
             // Generar código QR (OBLIGATORIO - solo se guarda si el QR se genera exitosamente)
             try {
@@ -149,10 +149,13 @@ class UploadController extends Controller
                 'scan_count' => 0, // Inicia en 0, solo se incrementa cuando se escanea el QR
             ]);
 
+            // Invalidar cache de estadísticas cuando se crea un nuevo documento
+            Cache::forget('documents_stats_v2');
+
             // URLs públicas a través de la API (escalable para producción en la nube)
-            $baseUrl = config('app.url');
-            $pdfUrl = "{$baseUrl}/api/files/pdf/{$qrId}";
-            $qrImageUrl = "{$baseUrl}/api/files/qr/{$qrId}";
+            // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
+            $pdfUrl = \App\Helpers\UrlHelper::url("/api/files/pdf/{$qrId}", $request);
+            $qrImageUrl = \App\Helpers\UrlHelper::url("/api/files/qr/{$qrId}", $request);
 
             return response()->json([
                 'success' => true,

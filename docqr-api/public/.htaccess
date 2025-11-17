@@ -14,9 +14,27 @@
     RewriteCond %{REQUEST_URI} (.+)/$
     RewriteRule ^ %1 [L,R=301]
 
-    # Send Requests To Front Controller...
+    # API Routes - Send to Laravel
+    RewriteCond %{REQUEST_URI} ^/api
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+
+    # Serve frontend static files (JS, CSS, images, etc.)
+    RewriteCond %{REQUEST_URI} ^/(.*\.(js|css|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot|json|map))$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^(.*)$ frontend/$1 [L]
+
+    # Frontend Angular (SPA) - Serve index.html for all non-API routes
+    RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_URI} !^/frontend
+    RewriteRule ^ frontend/index.html [L]
+
+    # Serve frontend files directly (fallback for SPA routing)
+    RewriteCond %{REQUEST_URI} ^/frontend
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^frontend/(.*)$ frontend/index.html [L]
 </IfModule>
 

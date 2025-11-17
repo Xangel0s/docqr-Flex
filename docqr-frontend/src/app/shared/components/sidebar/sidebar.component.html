@@ -7,20 +7,50 @@
 
 <!-- Sidebar -->
 <aside 
-  class="fixed md:sticky top-0 h-screen w-64 flex-shrink-0 flex-col bg-white border-r border-gray-200 z-50 transition-transform duration-300 ease-in-out md:translate-x-0"
+  class="fixed md:sticky top-0 h-screen flex-shrink-0 flex-col bg-white border-r border-gray-200 z-50 transition-all duration-300 ease-in-out md:translate-x-0"
   [ngClass]="{
     'translate-x-0': isOpen,
-    '-translate-x-full': !isOpen
+    '-translate-x-full': !isOpen,
+    'w-64': !isCollapsed,
+    'w-20 sidebar-collapsed': isCollapsed && isDesktop
   }">
   
   <div class="flex h-screen flex-col justify-between p-2">
     <!-- Logo y Header -->
     <div class="flex flex-col">
-      <div class="flex items-center gap-2 px-2 py-1 mb-1">
-        <div class="flex items-center justify-center size-7 rounded-lg bg-primary text-white shrink-0">
+      <div class="flex items-center gap-2 px-2 py-1 mb-1 relative">
+        <img 
+          src="assets/images/geofal.png" 
+          alt="Geofal Logo" 
+          class="object-contain transition-all duration-300"
+          [ngClass]="{
+            'h-12 w-auto': !isCollapsed,
+            'h-14 w-14 mx-auto': isCollapsed
+          }"
+          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="flex items-center justify-center size-7 rounded-lg bg-primary text-white shrink-0" style="display: none;">
           <span class="material-symbols-outlined text-base">qr_code_scanner</span>
         </div>
-        <h1 class="text-gray-900 text-sm font-bold">DocQR</h1>
+        <h1 
+          class="text-gray-900 font-bold transition-all duration-300 overflow-hidden"
+          [ngClass]="{
+            'text-sm': !isCollapsed,
+            'w-0 opacity-0': isCollapsed
+          }">Geofal</h1>
+        
+        <!-- Botón colapsar/expandir (solo desktop) -->
+        <button 
+          *ngIf="isDesktop"
+          class="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 items-center justify-center w-6 h-6 rounded-full bg-white border border-gray-300 shadow-md hover:bg-gray-50 transition-colors z-10"
+          (click)="toggleCollapse()"
+          [title]="isCollapsed ? 'Expandir sidebar' : 'Colapsar sidebar'">
+          <span 
+            class="material-symbols-outlined text-gray-600 text-sm transition-transform duration-300"
+            [ngClass]="{
+              'rotate-180': isCollapsed
+            }">chevron_left</span>
+        </button>
+        
         <!-- Botón cerrar para móvil -->
         <button 
           class="md:hidden ml-auto p-0.5 hover:bg-gray-100 rounded shrink-0"
@@ -36,48 +66,73 @@
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           [routerLinkActiveOptions]="{exact: true}"
           (click)="navigateAndClose()"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-          <span class="material-symbols-outlined text-base">dashboard</span>
-          <p class="text-xs font-medium">Dashboard</p>
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Dashboard' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">dashboard</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Dashboard</p>
         </a>
 
         <a 
           routerLink="/documents" 
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-          <span class="material-symbols-outlined text-base">folder</span>
-          <p class="text-xs font-medium">Mis Documentos</p>
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Mis Documentos' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">folder</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Mis Documentos</p>
         </a>
 
         <a 
           routerLink="/upload" 
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-          <span class="material-symbols-outlined text-base">qr_code_2</span>
-          <p class="text-xs font-medium">Generar QR</p>
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Generar QR' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">qr_code_2</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Generar QR</p>
         </a>
 
-            <a 
-              routerLink="/settings" 
-              routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
-              (click)="navigateAndClose()"
-              class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-              <span class="material-symbols-outlined text-base">settings</span>
-              <p class="text-xs font-medium">Configuración</p>
-            </a>
+        <a 
+          routerLink="/settings" 
+          routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
+          (click)="navigateAndClose()"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Configuración' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">settings</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Configuración</p>
+        </a>
 
-            <a 
-              routerLink="/compression" 
-              routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
-              (click)="navigateAndClose()"
-              class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-              <span class="material-symbols-outlined text-base">archive</span>
-              <p class="text-xs font-medium">Compresión</p>
-            </a>
-          </div>
-        </div>
+        <a 
+          routerLink="/compression" 
+          routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
+          (click)="navigateAndClose()"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Compresión' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">archive</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Compresión</p>
+        </a>
+      </div>
+    </div>
 
     <!-- Footer del Sidebar -->
     <div class="flex flex-col gap-0.5 mt-auto pt-1 border-t border-gray-200">
@@ -85,19 +140,36 @@
         routerLink="/help" 
         routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
         (click)="navigateAndClose()"
-        class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer">
-        <span class="material-symbols-outlined text-base">help</span>
-        <p class="text-xs font-medium">Ayuda</p>
+        class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+        [title]="isCollapsed ? 'Ayuda' : ''">
+        <span class="material-symbols-outlined text-base shrink-0">help</span>
+        <p 
+          class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+          [ngClass]="{
+            'w-0 opacity-0': isCollapsed
+          }">Ayuda</p>
       </a>
 
       <button 
         type="button"
         (click)="logout()"
-        class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer w-full text-left">
-        <span class="material-symbols-outlined text-base">logout</span>
-        <p class="text-xs font-medium">Cerrar Sesión</p>
+        class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer w-full text-left group relative"
+        [title]="isCollapsed ? 'Cerrar Sesión' : ''">
+        <span class="material-symbols-outlined text-base shrink-0">logout</span>
+        <p 
+          class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+          [ngClass]="{
+            'w-0 opacity-0': isCollapsed
+          }">Cerrar Sesión</p>
       </button>
     </div>
   </div>
 </aside>
+
+<!-- Modal de Confirmación de Logout -->
+<app-logout-confirm-modal
+  [isOpen]="showLogoutModal"
+  (confirm)="confirmLogout()"
+  (cancel)="cancelLogout()">
+</app-logout-confirm-modal>
 

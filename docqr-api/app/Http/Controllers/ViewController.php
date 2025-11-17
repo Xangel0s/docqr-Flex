@@ -37,16 +37,38 @@ class ViewController extends Controller
 
             // Determinar qué archivo servir
             // Si existe el PDF final con QR, servir ese, sino el original
+            Log::info('Visualizando documento:', [
+                'qr_id' => $hash,
+                'status' => $qrFile->status,
+                'final_path' => $qrFile->final_path,
+                'file_path' => $qrFile->file_path,
+                'has_final_path' => !empty($qrFile->final_path)
+            ]);
+            
             if ($qrFile->final_path) {
                 // PDF final: final/CE/filename.pdf -> CE/filename.pdf
                 $filePath = str_replace('final/', '', $qrFile->final_path);
                 $disk = 'final';
                 $fullPath = Storage::disk($disk)->path($filePath);
+                Log::info('Sirviendo PDF final con QR:', [
+                    'file_path' => $filePath,
+                    'full_path' => $fullPath,
+                    'exists' => file_exists($fullPath)
+                ]);
             } else {
                 // PDF original: uploads/CE/CE-12345/filename.pdf
+                // ADVERTENCIA: El QR no está embebido aún, se está sirviendo el PDF original
                 $filePath = $qrFile->file_path;
                 $disk = 'local';
                 $fullPath = Storage::disk($disk)->path($filePath);
+                Log::warning('Sirviendo PDF original (QR no embebido aún):', [
+                    'qr_id' => $hash,
+                    'status' => $qrFile->status,
+                    'file_path' => $filePath,
+                    'full_path' => $fullPath,
+                    'exists' => file_exists($fullPath),
+                    'message' => 'El documento aún no tiene el QR embebido. Use el editor para posicionar y embebir el QR.'
+                ]);
             }
 
             // Verificar que el archivo existe

@@ -1,10 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { DocqrService, StatsResponse } from '../../core/services/docqr.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
+import { Chart, ChartConfiguration, registerables } from 'chart.js';
 
 /**
  * Componente Dashboard - Página principal con estadísticas
@@ -16,18 +17,27 @@ import { SidebarComponent } from '../../shared/components/sidebar/sidebar.compon
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('scanChartCanvas', { static: false }) scanChartCanvas!: ElementRef<HTMLCanvasElement>;
+  
   stats: StatsResponse['data'] | null = null;
   loading: boolean = true;
   error: boolean = false;
   errorMessage: string = '';
   sidebarOpen: boolean = false; // En móvil: false por defecto, en desktop: siempre visible (manejado por CSS)
+  
+  private scanChart: Chart | null = null;
+  private lastLoadTime: number = 0;
+  private readonly CACHE_DURATION = 30000; // 30 segundos para dashboard (más largo porque no cambia tan frecuentemente)
 
   constructor(
     private docqrService: DocqrService,
     private notificationService: NotificationService,
     private router: Router
-  ) {}
+  ) {
+    // Registrar componentes de Chart.js
+    Chart.register(...registerables);
+  }
 
   ngOnInit(): void {
     this.loadStats();
@@ -38,10 +48,27 @@ export class DashboardComponent implements OnInit {
     }
   }
 
+  ngAfterViewInit(): void {
+    // Los gráficos se crearán después de cargar los datos
+  }
+
+  ngOnDestroy(): void {
+    if (this.scanChart) {
+      this.scanChart.destroy();
+    }
+  }
+
   /**
-   * Cargar estadísticas
+   * Cargar estadísticas (con caché para evitar recargas innecesarias)
    */
-  loadStats(): void {
+  loadStats(force: boolean = false): void {
+    // Verificar caché: si se cargó hace menos de 30 segundos y no es forzado, no recargar
+    const now = Date.now();
+    if (!force && (now - this.lastLoadTime) < this.CACHE_DURATION && this.stats) {
+      this.loading = false;
+      return;
+    }
+    
     this.loading = true;
     this.error = false;
     this.errorMessage = '';
@@ -51,6 +78,11 @@ export class DashboardComponent implements OnInit {
         if (response.success) {
           this.stats = response.data;
           this.error = false;
+          this.lastLoadTime = Date.now(); // Actualizar tiempo de carga
+          // Crear gráficos después de cargar los datos
+          setTimeout(() => {
+            this.createCharts();
+          }, 100);
         } else {
           this.error = true;
           this.errorMessage = 'Error al cargar estadísticas';
@@ -88,10 +120,10 @@ export class DashboardComponent implements OnInit {
   }
 
   /**
-   * Recargar estadísticas
+   * Recargar estadísticas (forzar recarga)
    */
   refreshStats(): void {
-    this.loadStats();
+    this.loadStats(true); // Forzar recarga al hacer clic en "Actualizar"
   }
 
   /**
@@ -128,6 +160,76 @@ export class DashboardComponent implements OnInit {
    */
   onCloseSidebar(): void {
     this.sidebarOpen = false;
+  }
+
+  /**
+   * Crear gráficos
+   */
+  private createCharts(): void {
+    if (!this.stats) return;
+
+    // Destruir gráfico anterior si existe
+    if (this.scanChart) {
+      this.scanChart.destroy();
+    }
+
+    // Crear gráfico de actividad de escaneos
+    if (this.scanChartCanvas && this.stats.activity_by_folder && this.stats.activity_by_folder.length > 0) {
+      const ctx = this.scanChartCanvas.nativeElement.getContext('2d');
+      if (ctx) {
+        const labels = this.stats.activity_by_folder.slice(0, 10).map(f => f.folder_name);
+        const data = this.stats.activity_by_folder.slice(0, 10).map(f => f.total_scans);
+
+        const config: ChartConfiguration = {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Escaneos',
+              data: data,
+              backgroundColor: 'rgba(59, 130, 246, 0.5)',
+              borderColor: 'rgba(59, 130, 246, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                callbacks: {
+                  label: (context) => {
+                    const value = context.parsed.y;
+                    return `Escaneos: ${value !== null && value !== undefined ? value.toLocaleString('es-ES') : '0'}`;
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return value.toLocaleString('es-ES');
+                  }
+                }
+              },
+              x: {
+                ticks: {
+                  maxRotation: 45,
+                  minRotation: 45
+                }
+              }
+            }
+          }
+        };
+
+        this.scanChart = new Chart(ctx, config);
+      }
+    }
   }
 }
 

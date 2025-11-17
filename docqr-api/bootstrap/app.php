@@ -12,8 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Configuración de middleware
+        // CRÍTICO: TrustProxies debe estar al inicio para detectar correctamente HTTPS
+        // Esto es esencial para ngrok, load balancers y proxies en producción
+        // Se registra primero para que procese los headers antes que otros middlewares
+        $middleware->web(prepend: [
+            \App\Http\Middleware\TrustProxies::class,
+        ]);
         $middleware->api(prepend: [
+            \App\Http\Middleware\TrustProxies::class,
+            \App\Http\Middleware\HandleCorsOptions::class, // Manejar OPTIONS antes que HandleCors
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
         

@@ -1,6 +1,9 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { AuthService } from '../../../core/services/auth.service';
+import { Router } from '@angular/router';
+import { LogoutConfirmModalComponent } from '../logout-confirm-modal/logout-confirm-modal.component';
 
 /**
  * Componente Sidebar con navegación y menú hamburguesa
@@ -8,20 +11,36 @@ import { RouterModule } from '@angular/router';
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, LogoutConfirmModalComponent],
   templateUrl: './sidebar.component.html',
   styleUrls: ['./sidebar.component.scss']
 })
 export class SidebarComponent implements OnInit, OnDestroy {
   @Input() isOpen: boolean = false;
   @Output() closeSidebar = new EventEmitter<void>();
+  
+  showLogoutModal: boolean = false;
+  isCollapsed: boolean = false;
+
+  constructor(
+    private authService: AuthService,
+    private router: Router
+  ) {}
+
+  /**
+   * Verificar si estamos en desktop
+   */
+  get isDesktop(): boolean {
+    return typeof window !== 'undefined' && window.innerWidth >= 768;
+  }
 
   ngOnInit(): void {
-    // En desktop, el sidebar siempre está visible
-    // En móvil, verificar si debe estar abierto
+    // Cargar estado de colapso desde localStorage (solo en desktop)
     if (window.innerWidth >= 768) {
-      // En desktop, forzar que esté abierto
-      // (se maneja con CSS, pero por si acaso)
+      const savedState = localStorage.getItem('sidebar_collapsed');
+      if (savedState !== null) {
+        this.isCollapsed = savedState === 'true';
+      }
     }
   }
 
@@ -46,13 +65,34 @@ export class SidebarComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Cerrar sesión
+   * Mostrar modal de confirmación de logout
    */
   logout(): void {
-    if (confirm('¿Estás seguro de que deseas cerrar sesión?')) {
-      // TODO: Implementar lógica de cierre de sesión
-      // Por ahora solo redirige al login/home
-      window.location.href = '/';
+    this.showLogoutModal = true;
+  }
+
+  /**
+   * Confirmar logout
+   */
+  confirmLogout(): void {
+    this.showLogoutModal = false;
+    this.authService.logout();
+  }
+
+  /**
+   * Cancelar logout
+   */
+  cancelLogout(): void {
+    this.showLogoutModal = false;
+  }
+
+  /**
+   * Toggle colapsar/expandir sidebar (solo en desktop)
+   */
+  toggleCollapse(): void {
+    if (window.innerWidth >= 768) {
+      this.isCollapsed = !this.isCollapsed;
+      localStorage.setItem('sidebar_collapsed', this.isCollapsed.toString());
     }
   }
 }

@@ -20,6 +20,7 @@
     "@angular/platform-browser": "^17.0.0",
     "@angular/platform-browser-dynamic": "^17.0.0",
     "@angular/router": "^17.0.0",
+    "chart.js": "^4.5.1",
     "fabric": "^6.9.0",
     "ngx-extended-pdf-viewer": "^19.0.0",
     "pdf-lib": "^1.17.1",

@@ -1,0 +1,137 @@
+<?php
+
+namespace App\Helpers;
+
+use Illuminate\Http\Request;
+
+/**
+ * Helper para generar URLs que respetan el protocolo de la solicitud actual
+ * 
+ * Esto es especialmente útil cuando se accede a través de ngrok (HTTPS)
+ * pero APP_URL está configurado como HTTP
+ */
+class UrlHelper
+{
+    /**
+     * Generar URL que respeta el protocolo de la solicitud actual
+     * 
+     * Soporta dos escenarios:
+     * 1. Frontend y backend en el mismo dominio: usa el dominio de la solicitud
+     * 2. Frontend y backend en dominios diferentes: usa FRONTEND_URL de .env o header X-Frontend-Origin
+     * 
+     * @param string $path Ruta relativa (ej: "/api/files/qr/abc123")
+     * @param Request|null $request Request actual (opcional, se detecta automáticamente)
+     * @return string URL completa con protocolo correcto
+     */
+    public static function url(string $path, ?Request $request = null): string
+    {
+        // Obtener request si no se proporciona
+        if (!$request) {
+            $request = request();
+        }
+
+        // Si no hay request, usar la función url() estándar de Laravel
+        if (!$request) {
+            return url($path);
+        }
+
+        $protocol = 'http';
+        $scheme = $request->getScheme();
+        $forwardedProto = $request->header('X-Forwarded-Proto');
+        $forwardedSsl = $request->header('X-Forwarded-Ssl');
+        $isSecure = $request->server('HTTPS');
+        
+        if ($forwardedProto === 'https') {
+            $protocol = 'https';
+        } elseif ($forwardedSsl === 'on') {
+            $protocol = 'https';
+        } elseif ($isSecure === 'on' || $isSecure === '1') {
+            $protocol = 'https';
+        } elseif ($scheme === 'https') {
+            $protocol = 'https';
+        } elseif ($request->secure()) {
+            $protocol = 'https';
+        } elseif (strpos($request->getHost(), 'ngrok') !== false || 
+                strpos($request->header('X-Forwarded-Host', ''), 'ngrok') !== false) {
+            $protocol = 'https';
+        }
+        
+        $host = null;
+        $frontendUrl = env('FRONTEND_URL');
+        $useLocalhost = env('USE_LOCALHOST', false);
+        
+        if ($useLocalhost && in_array(env('APP_ENV', 'production'), ['local', 'development'])) {
+            $host = 'localhost:8000';
+            $protocol = 'http';
+            $path = '/' . ltrim($path, '/');
+            return $protocol . '://' . $host . $path;
+        }
+        
+        if ($frontendUrl) {
+            $frontendUrl = rtrim($frontendUrl, '/');
+            $parsedFrontend = parse_url($frontendUrl);
+            if (isset($parsedFrontend['host'])) {
+                $host = $parsedFrontend['host'];
+                if (isset($parsedFrontend['scheme'])) {
+                    $protocol = $parsedFrontend['scheme'];
+                }
+                if (isset($parsedFrontend['port']) && $parsedFrontend['port'] != 80 && $parsedFrontend['port'] != 443) {
+                    $host .= ':' . $parsedFrontend['port'];
+                }
+                $path = '/' . ltrim($path, '/');
+                return $protocol . '://' . $host . $path;
+            }
+        }
+        
+        if (!$host) {
+            $frontendOrigin = $request->header('X-Frontend-Origin');
+            if ($frontendOrigin) {
+                $parsedOrigin = parse_url($frontendOrigin);
+                if (isset($parsedOrigin['host'])) {
+                    $host = $parsedOrigin['host'];
+                    if (isset($parsedOrigin['scheme'])) {
+                        $protocol = $parsedOrigin['scheme'];
+                    }
+                    if (isset($parsedOrigin['port']) && $parsedOrigin['port'] != 80 && $parsedOrigin['port'] != 443) {
+                        $host .= ':' . $parsedOrigin['port'];
+                    }
+                }
+            }
+        }
+        
+        if (!$host) {
+            $host = $request->header('X-Forwarded-Host');
+            if (!$host) {
+                $host = $request->getHost();
+            }
+            $host = preg_replace('/:\d+$/', '', $host);
+            
+            if ($protocol === 'https' && ($host === 'localhost' || strpos($host, '127.0.0.1') !== false)) {
+                $fullUrl = $request->fullUrl();
+                $parsedUrl = parse_url($fullUrl);
+                if (isset($parsedUrl['host']) && $parsedUrl['host'] !== 'localhost' && strpos($parsedUrl['host'], '127.0.0.1') === false) {
+                    $host = $parsedUrl['host'];
+                    if (isset($parsedUrl['port']) && $parsedUrl['port'] != 443) {
+                        $host .= ':' . $parsedUrl['port'];
+                    }
+                }
+            }
+        }
+        
+        $port = $request->getPort();
+        $baseUrl = $protocol . '://' . $host;
+        
+        if ($port && $port != 80 && $port != 443 && strpos($host, ':') === false) {
+            $baseUrl .= ':' . $port;
+        }
+        
+        $path = '/' . ltrim($path, '/');
+        return $baseUrl . $path;
+    }
+
+    public static function relativeUrl(string $path): string
+    {
+        return '/' . ltrim($path, '/');
+    }
+}
+

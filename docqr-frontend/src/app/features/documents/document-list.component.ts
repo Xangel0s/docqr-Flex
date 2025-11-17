@@ -68,8 +68,15 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   editFolderModalOpen: boolean = false;
   savingFolderName: boolean = false;
 
+  // Estado de exportación CSV
+  exportingCSV: boolean = false;
+
   // Suscripción para detectar navegación
   private routerSubscription?: Subscription;
+  
+  // Caché para evitar recargas innecesarias
+  private lastLoadTime: number = 0;
+  private readonly CACHE_DURATION = 5000; // 5 segundos
 
   constructor(
     private docqrService: DocqrService,
@@ -88,9 +95,9 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     this.routerSubscription = this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe((event: any) => {
-        // Si volvemos a la lista desde otra ruta, recargar documentos
+        // Si volvemos a la lista desde otra ruta, recargar documentos solo si es necesario
         if (event.url === '/documents' || event.urlAfterRedirects === '/documents') {
-          this.loadDocuments();
+          this.loadDocuments(false); // No forzar, usar caché si está disponible
         }
       });
   }
@@ -102,9 +109,15 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Cargar documentos
+   * Cargar documentos (con caché para evitar recargas innecesarias)
    */
-  loadDocuments(): void {
+  loadDocuments(force: boolean = false): void {
+    // Verificar caché: si se cargó hace menos de 5 segundos y no es forzado, no recargar
+    const now = Date.now();
+    if (!force && (now - this.lastLoadTime) < this.CACHE_DURATION && this.documents.length > 0) {
+      return;
+    }
+    
     this.loading = true;
     this.updateActiveFiltersCount();
     
@@ -115,6 +128,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
           this.currentPage = response.meta.current_page;
           this.totalPages = response.meta.last_page;
           this.totalDocuments = response.meta.total;
+          this.lastLoadTime = Date.now(); // Actualizar tiempo de carga
         } else {
           this.notificationService.showError('Error al cargar documentos');
         }
@@ -335,7 +349,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
         if (response.success) {
           this.notificationService.showSuccess(`✅ Nombre de carpeta actualizado exitosamente a: ${newFolderName}`);
           this.closeEditFolderModal();
-          this.loadDocuments(); // Recargar lista para mostrar cambios
+          this.loadDocuments(true); // Forzar recarga para mostrar cambios
           this.loadStats(); // Actualizar estadísticas
         } else {
           this.notificationService.showError(response.message || 'Error al actualizar el nombre de carpeta');
@@ -565,7 +579,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
         if (response.success) {
           this.notificationService.showSuccess(`✅ Documento "${documentName}" eliminado exitosamente`);
           this.closeDeleteModal();
-          this.loadDocuments();
+          this.loadDocuments(true); // Forzar recarga después de eliminar
           this.loadStats();
         } else {
           this.notificationService.showError(response.message || 'Error al eliminar documento');
@@ -620,6 +634,133 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
   onCloseSidebar(): void {
     this.sidebarOpen = false;
+  }
+
+  /**
+   * Exportar todos los documentos a CSV
+   */
+  exportToCSV(): void {
+    if (this.exportingCSV) {
+      return; // Evitar múltiples clics
+    }
+
+    this.exportingCSV = true;
+    this.notificationService.showInfo('Generando archivo CSV... Esto puede tomar unos momentos.');
+    
+    // Obtener TODOS los documentos sin paginación para exportar
+    this.docqrService.getAllDocumentsForExport(this.searchTerm, this.filters).subscribe({
+      next: (response: DocumentsResponse) => {
+        if (response.success && response.data.length > 0) {
+          try {
+            this.generateCSV(response.data);
+            this.notificationService.showSuccess(`✅ CSV exportado exitosamente con ${response.data.length} documentos`);
+          } catch (error) {
+            console.error('Error al generar CSV:', error);
+            this.notificationService.showError('Error al generar el archivo CSV');
+          } finally {
+            this.exportingCSV = false;
+          }
+        } else {
+          this.notificationService.showWarning('No hay documentos para exportar');
+          this.exportingCSV = false;
+        }
+      },
+      error: (error) => {
+        console.error('Error al obtener documentos para exportar:', error);
+        this.notificationService.showError('Error al generar el archivo CSV');
+        this.exportingCSV = false;
+      }
+    });
+  }
+
+  /**
+   * Generar archivo CSV con todos los datos
+   * Usa punto y coma (;) como separador para Excel en español
+   */
+  private generateCSV(documents: Document[]): void {
+    // Definir columnas del CSV
+    const headers = [
+      'ID',
+      'QR ID',
+      'Nombre de Archivo',
+      'Carpeta',
+      'Tipo',
+      'Tamaño (bytes)',
+      'Tamaño (formato)',
+      'Estado',
+      'Escaneos',
+      'Último Escaneo',
+      'Fecha de Creación',
+      'URL QR',
+      'URL PDF',
+      'URL PDF Final'
+    ];
+
+    // Separador: punto y coma para Excel en español
+    const separator = ';';
+
+    // Crear filas de datos
+    const rows = documents.map(doc => {
+      const tipo = this.getDocumentType(doc.folder_name);
+      const fechaCreacion = doc.created_at ? new Date(doc.created_at).toLocaleString('es-ES') : 'N/A';
+      const ultimoEscaneo = doc.last_scanned_at ? new Date(doc.last_scanned_at).toLocaleString('es-ES') : 'N/A';
+      
+      return [
+        doc.id.toString(),
+        doc.qr_id,
+        this.escapeCSV(doc.original_filename, separator),
+        this.escapeCSV(doc.folder_name, separator),
+        tipo,
+        doc.file_size.toString(),
+        this.formatFileSize(doc.file_size),
+        doc.status,
+        doc.scan_count.toString(),
+        ultimoEscaneo,
+        fechaCreacion,
+        doc.qr_url || '',
+        doc.pdf_url || '',
+        doc.final_pdf_url || ''
+      ];
+    });
+
+    // Combinar headers y rows con punto y coma
+    const csvContent = [
+      headers.join(separator),
+      ...rows.map(row => row.join(separator))
+    ].join('\n');
+
+    // Agregar BOM para UTF-8 (Excel lo reconoce mejor)
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    // Crear enlace de descarga
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Nombre del archivo con fecha
+    const fecha = new Date().toISOString().split('T')[0];
+    link.download = `documentos_geofal_${fecha}.csv`;
+    
+    // Descargar
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Escapar valores para CSV (manejar punto y coma, comillas, saltos de línea)
+   */
+  private escapeCSV(value: string, separator: string = ';'): string {
+    if (!value) return '';
+    
+    // Si contiene el separador, comillas o saltos de línea, envolver en comillas y escapar comillas internas
+    if (value.includes(separator) || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    
+    return value;
   }
 }
 

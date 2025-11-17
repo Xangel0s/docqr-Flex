@@ -12,7 +12,7 @@
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex flex-col gap-1">
             <h1 class="text-4xl font-black leading-tight tracking-tight text-gray-900">Centro de Ayuda</h1>
-            <p class="text-base font-normal leading-normal text-gray-600">Encuentra respuestas y tutoriales para empezar a usar DocQR.</p>
+            <p class="text-base font-normal leading-normal text-gray-600">Encuentra respuestas y tutoriales para empezar a usar Geofal.</p>
           </div>
         </div>
 
@@ -23,7 +23,7 @@
             <div class="flex flex-col rounded-xl border border-gray-200 bg-white p-2">
               <details class="flex flex-col border-b border-gray-200 py-2 group" open>
                 <summary class="flex cursor-pointer items-center justify-between gap-4 p-2">
-                  <p class="text-sm font-medium leading-normal text-gray-900">¿Cómo puedo empezar a usar DocQR?</p>
+                  <p class="text-sm font-medium leading-normal text-gray-900">¿Cómo puedo empezar a usar Geofal?</p>
                   <span class="material-symbols-outlined text-gray-600 transition-transform group-open:rotate-180">expand_more</span>
                 </summary>
                 <p class="px-2 pb-2 text-sm font-normal leading-normal text-gray-600">Para comenzar, simplemente navega a la sección 'Documentos' y haz clic en 'Subir Documento'. Nuestro sistema te guiará para embeber un código QR y configurar tus archivos.</p>
@@ -49,28 +49,52 @@
           <div>
             <h2 class="px-1 pb-3 pt-5 text-[22px] font-bold leading-tight tracking-tight text-gray-900">Tutoriales en Vídeo</h2>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <a class="group flex flex-col gap-3" href="#">
-                <div class="relative overflow-hidden rounded-lg aspect-video bg-gray-200 flex items-center justify-center">
-                  <span class="material-symbols-outlined text-6xl text-gray-400">play_circle</span>
+              <!-- Video: Subir tu primer documento -->
+              <button
+                type="button"
+                (click)="openVideoModal()"
+                class="group flex flex-col gap-3 text-left hover:opacity-90 transition-opacity active:scale-95">
+                <div class="relative overflow-hidden rounded-lg aspect-video bg-gray-900 group-hover:opacity-90 transition-opacity">
+                  <img 
+                    [src]="videoThumbnail" 
+                    alt="Miniatura del video tutorial"
+                    class="w-full h-full object-cover opacity-60 group-hover:opacity-70 transition-opacity">
+                  <div class="absolute inset-0 bg-black bg-opacity-40 group-hover:bg-opacity-50 transition-all"></div>
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-6xl text-white opacity-90 group-hover:opacity-100 transition-opacity drop-shadow-lg">play_circle</span>
+                  </div>
                 </div>
                 <div>
                   <h3 class="font-medium text-gray-900">Subir tu primer documento</h3>
                   <p class="text-sm text-gray-600">Aprende a cargar y configurar tu PDF.</p>
                 </div>
-              </a>
-              <a class="group flex flex-col gap-3" href="#">
-                <div class="relative overflow-hidden rounded-lg aspect-video bg-gray-200 flex items-center justify-center">
-                  <span class="material-symbols-outlined text-6xl text-gray-400">play_circle</span>
-                </div>
-                <div>
-                  <h3 class="font-medium text-gray-900">Entendiendo las analíticas</h3>
-                  <p class="text-sm text-gray-600">Saca el máximo partido a tus datos.</p>
-                </div>
-              </a>
+              </button>
             </div>
           </div>
+        </div>
+        
+        <!-- Créditos -->
+        <div class="mt-12 pt-6 border-t border-gray-200">
+          <p class="text-xs text-gray-400 text-center">
+            Desarrollado con <span class="text-red-500">♥</span> por 
+            <a 
+              href="https://github.com/Xangel0s" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              class="text-gray-500 hover:text-gray-700 transition-colors underline decoration-dotted underline-offset-2">
+              Xangel0s
+            </a>
+          </p>
         </div>
       </div>
     </main>
   </div>
+
+  <!-- Modal de Video -->
+  <app-video-modal
+    [isOpen]="videoModalOpen"
+    [videoUrl]="youtubeVideoUrl"
+    [videoTitle]="'Subir tu primer documento - Tutorial'"
+    (close)="closeVideoModal()">
+  </app-video-modal>
 </div>

@@ -138,6 +138,19 @@
               <span class="material-symbols-outlined text-gray-400 text-lg">content_copy</span>
             </button>
 
+            <!-- Regenerar QR (si tiene localhost) -->
+            <button 
+              *ngIf="hasLocalhostUrl()"
+              type="button"
+              (click)="regenerateQr()"
+              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-orange-300 bg-orange-50 hover:bg-orange-100 transition-all active:scale-95">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-orange-600">refresh</span>
+                <span class="text-sm font-medium text-orange-700">Regenerar QR (corregir URL)</span>
+              </div>
+              <span class="material-symbols-outlined text-orange-400 text-lg">sync</span>
+            </button>
+
             <!-- Descargar QR Solo -->
             <button 
               type="button"

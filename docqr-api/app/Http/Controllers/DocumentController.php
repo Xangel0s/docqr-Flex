@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\QrFile;
+use App\Services\QrGeneratorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
@@ -14,6 +16,12 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
  */
 class DocumentController extends Controller
 {
+    protected $qrGenerator;
+
+    public function __construct(QrGeneratorService $qrGenerator)
+    {
+        $this->qrGenerator = $qrGenerator;
+    }
     /**
      * Listar documentos con filtros y paginación
      * 
@@ -100,13 +108,13 @@ class DocumentController extends Controller
                     'last_scanned_at' => $document->last_scanned_at?->format('Y-m-d H:i:s'),
                     'created_at' => $document->created_at?->format('Y-m-d H:i:s'),
                     'updated_at' => $document->updated_at?->format('Y-m-d H:i:s'),
-                    // URLs generadas dinámicamente
-                    'qr_url' => url("/api/view/{$document->qr_id}"),
-                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
-                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
-                    'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
+                    // URLs generadas dinámicamente (respetan protocolo de solicitud actual)
+                    'qr_url' => \App\Helpers\UrlHelper::url("/api/view/{$document->qr_id}", request()),
+                    'pdf_url' => \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request()), // PDF final (si existe) o original
+                    'pdf_original_url' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$document->qr_id}", request()), // Siempre PDF original (para editor)
+                    'qr_image_url' => \App\Helpers\UrlHelper::url("/api/files/qr/{$document->qr_id}", request()),
                     'final_pdf_url' => $document->final_path 
-                        ? url("/api/files/pdf/{$document->qr_id}")
+                        ? \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request())
                         : null,
                 ];
             });
@@ -154,12 +162,12 @@ class DocumentController extends Controller
                     'scan_count' => $document->scan_count,
                     'last_scanned_at' => $document->last_scanned_at,
                     'created_at' => $document->created_at,
-                    'qr_url' => $document->view_url,
-                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
-                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
-                    'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
+                    'qr_url' => \App\Helpers\UrlHelper::url("/api/view/{$document->qr_id}", request()),
+                    'pdf_url' => \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request()), // PDF final (si existe) o original
+                    'pdf_original_url' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$document->qr_id}", request()), // Siempre PDF original (para editor)
+                    'qr_image_url' => \App\Helpers\UrlHelper::url("/api/files/qr/{$document->qr_id}", request()),
                     'final_pdf_url' => $document->final_path 
-                        ? url("/api/files/pdf/{$document->qr_id}")
+                        ? \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request())
                         : null,
                 ]
             ], 200);
@@ -196,12 +204,12 @@ class DocumentController extends Controller
                     'scan_count' => $document->scan_count,
                     'last_scanned_at' => $document->last_scanned_at,
                     'created_at' => $document->created_at,
-                    'qr_url' => $document->view_url,
-                    'pdf_url' => url("/api/files/pdf/{$document->qr_id}"), // PDF final (si existe) o original
-                    'pdf_original_url' => url("/api/files/pdf-original/{$document->qr_id}"), // Siempre PDF original (para editor)
-                    'qr_image_url' => url("/api/files/qr/{$document->qr_id}"),
+                    'qr_url' => \App\Helpers\UrlHelper::url("/api/view/{$document->qr_id}", request()),
+                    'pdf_url' => \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request()), // PDF final (si existe) o original
+                    'pdf_original_url' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$document->qr_id}", request()), // Siempre PDF original (para editor)
+                    'qr_image_url' => \App\Helpers\UrlHelper::url("/api/files/qr/{$document->qr_id}", request()),
                     'final_pdf_url' => $document->final_path 
-                        ? url("/api/files/pdf/{$document->qr_id}")
+                        ? \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request())
                         : null,
                 ]
             ], 200);
@@ -252,6 +260,9 @@ class DocumentController extends Controller
             
             // Guardar cambios
             $document->save();
+            
+            // Invalidar cache de estadísticas cuando se actualiza un documento
+            Cache::forget('documents_stats_v2');
 
             Log::info('Nombre de carpeta actualizado exitosamente:', [
                 'qr_id' => $qrId,
@@ -378,55 +389,60 @@ class DocumentController extends Controller
     public function stats(): JsonResponse
     {
         try {
-            // Estadísticas básicas
-            $totalDocuments = QrFile::count();
-            $totalScans = QrFile::sum('scan_count') ?? 0;
-            $completedDocuments = QrFile::where('status', 'completed')->count();
-            $pendingDocuments = QrFile::where('status', 'uploaded')->count();
-            
-            // Escaneos de los últimos 30 días
-            $scansLast30Days = QrFile::where('last_scanned_at', '>=', now()->subDays(30))
-                ->sum('scan_count') ?? 0;
+            // Cachear estadísticas por 2 minutos para mejorar rendimiento con múltiples usuarios
+            // Se invalida automáticamente cuando se crean/actualizan documentos
+            $cacheKey = 'documents_stats_v2';
+            $stats = Cache::remember($cacheKey, 120, function () {
+                // Estadísticas básicas (optimizadas con índices)
+                $totalDocuments = QrFile::count();
+                $totalScans = QrFile::sum('scan_count') ?? 0;
+                $completedDocuments = QrFile::where('status', 'completed')->count();
+                $pendingDocuments = QrFile::where('status', 'uploaded')->count();
+                
+                // Escaneos de los últimos 30 días (optimizado con índice en last_scanned_at)
+                $scansLast30Days = QrFile::where('last_scanned_at', '>=', now()->subDays(30))
+                    ->sum('scan_count') ?? 0;
 
-            // Actividad por carpeta (agrupado por folder_name)
-            $activityByFolder = QrFile::select('folder_name', DB::raw('count(*) as document_count'), DB::raw('sum(scan_count) as total_scans'))
-                ->groupBy('folder_name')
-                ->orderBy('total_scans', 'desc')
-                ->limit(10)
-                ->get()
-                ->map(function ($item) {
-                    return [
-                        'folder_name' => $item->folder_name,
-                        'document_count' => $item->document_count,
-                        'total_scans' => $item->total_scans ?? 0,
-                    ];
-                });
+                // Actividad por carpeta (optimizado con índice en folder_name)
+                $activityByFolder = QrFile::select('folder_name', DB::raw('count(*) as document_count'), DB::raw('sum(scan_count) as total_scans'))
+                    ->groupBy('folder_name')
+                    ->orderBy('total_scans', 'desc')
+                    ->limit(10)
+                    ->get()
+                    ->map(function ($item) {
+                        return [
+                            'folder_name' => $item->folder_name,
+                            'document_count' => $item->document_count,
+                            'total_scans' => $item->total_scans ?? 0,
+                        ];
+                    });
 
-            // Documentos recientes (últimos 5)
-            $recentDocuments = QrFile::orderBy('created_at', 'desc')
-                ->limit(5)
-                ->get()
-                ->map(function ($doc) {
-                    return [
-                        'id' => $doc->id,
-                        'original_filename' => $doc->original_filename,
-                        'folder_name' => $doc->folder_name,
-                        'scan_count' => $doc->scan_count,
-                        'last_scanned_at' => $doc->last_scanned_at?->format('Y-m-d H:i:s'),
-                        'status' => $doc->status,
-                    ];
-                });
+                // Documentos recientes (optimizado con índice en created_at)
+                $recentDocuments = QrFile::orderBy('created_at', 'desc')
+                    ->limit(5)
+                    ->get()
+                    ->map(function ($doc) {
+                        return [
+                            'id' => $doc->id,
+                            'original_filename' => $doc->original_filename,
+                            'folder_name' => $doc->folder_name,
+                            'scan_count' => $doc->scan_count,
+                            'last_scanned_at' => $doc->last_scanned_at?->format('Y-m-d H:i:s'),
+                            'status' => $doc->status,
+                        ];
+                    });
 
-            $stats = [
-                'total_documents' => $totalDocuments,
-                'total_scans' => $totalScans,
-                'scans_last_30_days' => $scansLast30Days,
-                'completed_documents' => $completedDocuments,
-                'pending_documents' => $pendingDocuments,
-                'last_upload' => QrFile::latest('created_at')->first()?->created_at?->format('Y-m-d H:i:s'),
-                'activity_by_folder' => $activityByFolder,
-                'recent_documents' => $recentDocuments,
-            ];
+                return [
+                    'total_documents' => $totalDocuments,
+                    'total_scans' => $totalScans,
+                    'scans_last_30_days' => $scansLast30Days,
+                    'completed_documents' => $completedDocuments,
+                    'pending_documents' => $pendingDocuments,
+                    'last_upload' => QrFile::latest('created_at')->first()?->created_at?->format('Y-m-d H:i:s'),
+                    'activity_by_folder' => $activityByFolder,
+                    'recent_documents' => $recentDocuments,
+                ];
+            });
 
             return response()->json([
                 'success' => true,
@@ -437,6 +453,81 @@ class DocumentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener estadísticas: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Regenerar QR code con URL actualizada (para corregir URLs con localhost)
+     * 
+     * @param string $qrId
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function regenerateQr(string $qrId, Request $request): JsonResponse
+    {
+        try {
+            $document = QrFile::where('qr_id', $qrId)->firstOrFail();
+
+            // Generar nueva URL usando UrlHelper (detecta automáticamente protocolo y host)
+            $newQrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
+
+            Log::info('Regenerando QR code:', [
+                'qr_id' => $qrId,
+                'old_qr_path' => $document->qr_path,
+                'new_qr_url' => $newQrUrl
+            ]);
+
+            // Regenerar el QR code con la nueva URL
+            $newQrPath = $this->qrGenerator->generate($newQrUrl, $qrId);
+
+            // Actualizar el registro en la base de datos
+            $document->update([
+                'qr_path' => $newQrPath
+            ]);
+            
+            // Invalidar cache de estadísticas cuando se regenera un QR
+            Cache::forget('documents_stats_v2');
+
+            // Eliminar el QR antiguo si existe y es diferente
+            if ($document->getOriginal('qr_path') && $document->getOriginal('qr_path') !== $newQrPath) {
+                try {
+                    $oldQrFilename = basename($document->getOriginal('qr_path'));
+                    if (Storage::disk('qrcodes')->exists($oldQrFilename)) {
+                        Storage::disk('qrcodes')->delete($oldQrFilename);
+                        Log::info('QR antiguo eliminado:', ['filename' => $oldQrFilename]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('No se pudo eliminar QR antiguo (no crítico):', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'QR code regenerado exitosamente',
+                'data' => [
+                    'qr_id' => $qrId,
+                    'qr_url' => $newQrUrl,
+                    'qr_image_url' => \App\Helpers\UrlHelper::url("/api/files/qr/{$qrId}", $request)
+                ]
+            ], 200);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Documento no encontrado'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error al regenerar QR: ' . $e->getMessage(), [
+                'qr_id' => $qrId,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al regenerar QR code: ' . $e->getMessage()
             ], 500);
         }
     }

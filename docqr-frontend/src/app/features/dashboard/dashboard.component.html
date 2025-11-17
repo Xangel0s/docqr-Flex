@@ -100,17 +100,25 @@
           </p>
           <p class="text-sm font-medium text-gray-400">Total histórico</p>
         </div>
-        <div class="h-64 flex flex-col items-center justify-center bg-gray-50 rounded-lg">
-          <span *ngIf="loading" class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
-          <p *ngIf="loading" class="text-gray-500">Cargando datos...</p>
+        <div class="h-64 bg-gray-50 rounded-lg relative">
+          <span *ngIf="loading" class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
+            <p class="text-gray-500">Cargando datos...</p>
+          </span>
           
-          <span *ngIf="!loading && error" class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
-          <p *ngIf="!loading && error" class="text-red-500 font-medium">Error al cargar</p>
-          <p *ngIf="!loading && error" class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          <span *ngIf="!loading && error" class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
+            <p class="text-red-500 font-medium">Error al cargar</p>
+            <p class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          </span>
           
-          <span *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="material-symbols-outlined text-4xl text-gray-300 mb-2">bar_chart</span>
-          <p *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="text-gray-500">Sin datos de escaneos</p>
-          <p *ngIf="!loading && !error && (!stats || stats.total_scans === 0)" class="text-xs text-gray-400 mt-1">Los gráficos aparecerán cuando haya actividad</p>
+          <span *ngIf="!loading && !error && (!stats || !stats.activity_by_folder || stats.activity_by_folder.length === 0)" class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="material-symbols-outlined text-4xl text-gray-300 mb-2">bar_chart</span>
+            <p class="text-gray-500">Sin datos de escaneos</p>
+            <p class="text-xs text-gray-400 mt-1">Los gráficos aparecerán cuando haya actividad</p>
+          </span>
+          
+          <canvas *ngIf="!loading && !error && stats && stats.activity_by_folder && stats.activity_by_folder.length > 0" #scanChartCanvas></canvas>
         </div>
       </div>
 
@@ -123,17 +131,40 @@
           </p>
           <p class="text-sm font-medium text-gray-400">Documentos activos</p>
         </div>
-        <div class="h-64 flex flex-col items-center justify-center bg-gray-50 rounded-lg">
-          <span *ngIf="loading" class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
-          <p *ngIf="loading" class="text-gray-500">Cargando documentos...</p>
+        <div class="h-64 bg-gray-50 rounded-lg overflow-y-auto">
+          <span *ngIf="loading" class="flex flex-col items-center justify-center h-full">
+            <span class="material-symbols-outlined text-4xl text-gray-300 mb-2 animate-spin">sync</span>
+            <p class="text-gray-500">Cargando documentos...</p>
+          </span>
           
-          <span *ngIf="!loading && error" class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
-          <p *ngIf="!loading && error" class="text-red-500 font-medium">Error al cargar</p>
-          <p *ngIf="!loading && error" class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          <span *ngIf="!loading && error" class="flex flex-col items-center justify-center h-full">
+            <span class="material-symbols-outlined text-4xl text-red-300 mb-2">error_outline</span>
+            <p class="text-red-500 font-medium">Error al cargar</p>
+            <p class="text-xs text-red-400 mt-1">No se pudieron obtener los datos</p>
+          </span>
           
-          <span *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="material-symbols-outlined text-4xl text-gray-300 mb-2">description</span>
-          <p *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="text-gray-500">Sin documentos recientes</p>
-          <p *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="text-xs text-gray-400 mt-1">Sube documentos para ver el ranking</p>
+          <span *ngIf="!loading && !error && (!stats || !stats.recent_documents || (stats.recent_documents && stats.recent_documents.length === 0))" class="flex flex-col items-center justify-center h-full">
+            <span class="material-symbols-outlined text-4xl text-gray-300 mb-2">description</span>
+            <p class="text-gray-500">Sin documentos recientes</p>
+            <p class="text-xs text-gray-400 mt-1">Sube documentos para ver el ranking</p>
+          </span>
+          
+          <div *ngIf="!loading && !error && stats && stats.recent_documents && stats.recent_documents.length > 0" class="p-4 space-y-3">
+            <div *ngFor="let doc of stats.recent_documents.slice(0, 5); let i = index" 
+                 class="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+              <div class="flex-shrink-0 w-8 h-8 rounded-full bg-primary bg-opacity-10 flex items-center justify-center">
+                <span class="text-sm font-bold text-primary">{{ i + 1 }}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 truncate">{{ doc.original_filename }}</p>
+                <p class="text-xs text-gray-500">{{ doc.folder_name }}</p>
+              </div>
+              <div class="flex-shrink-0 text-right">
+                <p class="text-sm font-semibold text-gray-900">{{ formatNumber(doc.scan_count) }}</p>
+                <p class="text-xs text-gray-400">escaneos</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

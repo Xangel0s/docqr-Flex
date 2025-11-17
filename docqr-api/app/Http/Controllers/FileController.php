@@ -28,60 +28,44 @@ class FileController extends Controller
         try {
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            // Determinar qué archivo servir
             if ($qrFile->final_path) {
-                // PDF final con QR embebido
                 $filePath = str_replace('final/', '', $qrFile->final_path);
                 $disk = 'final';
                 $fullPath = Storage::disk($disk)->path($filePath);
             } elseif ($qrFile->file_path) {
-                // PDF original
                 $fullPath = Storage::disk('local')->path($qrFile->file_path);
             } else {
                 abort(404, 'Archivo PDF no encontrado');
             }
 
-            // Verificar que el archivo existe
             if (!file_exists($fullPath)) {
                 abort(404, 'Archivo PDF no encontrado');
             }
 
-            // Leer el contenido del archivo
             $content = file_get_contents($fullPath);
-
-            // Sanitizar nombre de archivo para seguridad
             $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFile->original_filename);
             
-            // Estrategia de caché según tipo de PDF y ambiente
             $isProduction = app()->environment('production');
             $isFinalPdf = (bool) $qrFile->final_path;
             
             if ($isFinalPdf) {
-                // PDF final: NO cachear (puede cambiar al reposicionar QR)
-                // En producción también sin caché para garantizar versión actualizada
-                // Agregar timestamp en la URL para forzar recarga
                 $cacheControl = 'no-cache, no-store, must-revalidate, private';
                 $pragma = 'no-cache';
                 $expires = '0';
             } else {
-                // PDF original: Cachear según ambiente
                 if ($isProduction) {
-                    // Producción: Cachear más tiempo (archivos estables)
-                    $cacheControl = 'public, max-age=86400, immutable'; // 24 horas
+                    $cacheControl = 'public, max-age=86400, immutable';
                     $pragma = null;
                     $expires = null;
                 } else {
-                    // Desarrollo: Cachear menos tiempo (para ver cambios)
-                    $cacheControl = 'public, max-age=300'; // 5 minutos
+                    $cacheControl = 'public, max-age=300';
                     $pragma = 'no-cache';
                     $expires = '0';
                 }
             }
             
-            // Generar ETag para validación de caché (útil en producción)
             $etag = md5($fullPath . filemtime($fullPath));
             
-            // Retornar respuesta con headers apropiados para PDF
             $response = response($content, 200)
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
@@ -91,7 +75,6 @@ class FileController extends Controller
                 ->header('X-Content-Type-Options', 'nosniff')
                 ->header('X-Content-Security-Policy', "default-src 'self'");
             
-            // Headers adicionales según tipo de caché
             if ($pragma) {
                 $response->header('Pragma', $pragma);
             }
@@ -99,14 +82,12 @@ class FileController extends Controller
                 $response->header('Expires', $expires);
             }
             
-            // Headers de seguridad en producción
             if ($isProduction) {
                 $response->header('X-Frame-Options', 'SAMEORIGIN')
                          ->header('X-XSS-Protection', '1; mode=block')
                          ->header('Referrer-Policy', 'strict-origin-when-cross-origin');
             }
             
-            // Validar ETag del cliente (304 Not Modified si no cambió)
             if ($request->header('If-None-Match') === $etag) {
                 return response('', 304)
                     ->header('ETag', $etag)
@@ -133,63 +114,95 @@ class FileController extends Controller
         try {
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            // SIEMPRE servir el PDF original, nunca el final
             if (!$qrFile->file_path) {
+                if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'El documento no tiene file_path configurado en la base de datos',
+                        'qr_id' => $qrId
+                    ], 404);
+                }
                 abort(404, 'Archivo PDF original no encontrado');
             }
 
             $fullPath = Storage::disk('local')->path($qrFile->file_path);
 
-            // IMPORTANTE: El PDF original NO debe eliminarse para permitir reposicionamiento
-            // Si no existe, es un error (no usar PDF final como fallback en el editor)
             if (!file_exists($fullPath)) {
-                Log::error('PDF original no encontrado - no se debe usar PDF final como fallback en el editor', [
-                    'qr_id' => $qrId,
-                    'file_path' => $qrFile->file_path,
-                    'final_path' => $qrFile->final_path
-                ]);
-                abort(404, 'Archivo PDF original no encontrado. El editor requiere el PDF original sin QR.');
+                $possiblePaths = [
+                    $fullPath,
+                    storage_path('app/' . $qrFile->file_path),
+                    base_path('storage/app/' . $qrFile->file_path),
+                    str_replace('uploads/', 'storage/app/uploads/', $qrFile->file_path),
+                ];
+                
+                $foundPath = null;
+                foreach ($possiblePaths as $possiblePath) {
+                    if (file_exists($possiblePath) && is_file($possiblePath)) {
+                        $foundPath = $possiblePath;
+                        break;
+                    }
+                }
+                
+                if (!$foundPath) {
+                    if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'El archivo PDF original no existe físicamente en el servidor. El editor requiere el PDF original sin QR.',
+                            'qr_id' => $qrId,
+                            'file_path' => $qrFile->file_path,
+                            'full_path' => $fullPath,
+                            'storage_exists' => Storage::disk('local')->exists($qrFile->file_path)
+                        ], 404);
+                    }
+                    abort(404, 'Archivo PDF original no encontrado. El editor requiere el PDF original sin QR.');
+                } else {
+                    $fullPath = $foundPath;
+                }
             }
 
-            // Leer el contenido del archivo
             $content = file_get_contents($fullPath);
-
-            // Sanitizar nombre de archivo para seguridad
             $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFile->original_filename);
             
-            // Estrategia de caché para PDF original
-            // Si viene del editor (parámetro editor=true), NO cachear para ver cambios inmediatos
             $isFromEditor = $request->has('editor') && $request->input('editor') === 'true';
             $isProduction = app()->environment('production');
             
             if ($isFromEditor) {
-                // Desde el editor: NO cachear para ver cambios inmediatos
                 $cacheControl = 'no-cache, no-store, must-revalidate, private';
                 $pragma = 'no-cache';
                 $expires = '0';
             } elseif ($isProduction) {
-                // Producción: Cachear más tiempo
-                $cacheControl = 'public, max-age=86400, immutable'; // 24 horas
+                $cacheControl = 'public, max-age=86400, immutable';
                 $pragma = null;
                 $expires = null;
             } else {
-                // Desarrollo: Cachear menos tiempo
-                $cacheControl = 'public, max-age=300'; // 5 minutos
+                $cacheControl = 'public, max-age=300';
                 $pragma = 'no-cache';
                 $expires = '0';
             }
             
-            // Generar ETag
             $etag = md5($fullPath . (file_exists($fullPath) ? filemtime($fullPath) : 0));
             
-            // Retornar respuesta con headers apropiados para PDF
             $response = response($content, 200)
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
                 ->header('Content-Length', strlen($content))
                 ->header('Cache-Control', $cacheControl)
                 ->header('ETag', $etag)
-                ->header('X-Content-Type-Options', 'nosniff');
+                ->header('X-Content-Type-Options', 'nosniff')
+                ->header('X-Accel-Buffering', 'no');
+            
+            $origin = $request->header('Origin');
+            if ($origin) {
+                $response->header('Access-Control-Allow-Origin', $origin);
+                $response->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Requested-With, Authorization');
+                $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition');
+            }
+            
+            if (str_contains($request->header('Host', ''), 'ngrok') || 
+                str_contains($request->header('X-Forwarded-Host', ''), 'ngrok')) {
+                $response->header('X-Frame-Options', 'ALLOWALL');
+            }
             
             if ($pragma) {
                 $response->header('Pragma', $pragma);
@@ -198,14 +211,12 @@ class FileController extends Controller
                 $response->header('Expires', $expires);
             }
             
-            // Headers de seguridad en producción
             if ($isProduction) {
                 $response->header('X-Frame-Options', 'SAMEORIGIN')
                          ->header('X-XSS-Protection', '1; mode=block')
                          ->header('Referrer-Policy', 'strict-origin-when-cross-origin');
             }
             
-            // Validar ETag del cliente
             if ($request->header('If-None-Match') === $etag) {
                 return response('', 304)
                     ->header('ETag', $etag)
@@ -214,8 +225,33 @@ class FileController extends Controller
             
             return $response;
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('PDF original no encontrado (documento no existe en BD):', [
+                'qr_id' => $qrId,
+                'error' => $e->getMessage()
+            ]);
+            // Devolver JSON en lugar de HTML para peticiones de API
+            if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Documento no encontrado',
+                    'qr_id' => $qrId
+                ], 404);
+            }
+            abort(404, 'Archivo PDF original no encontrado');
         } catch (\Exception $e) {
-            Log::error('Error al servir PDF original: ' . $e->getMessage());
+            Log::error('Error al servir PDF original: ' . $e->getMessage(), [
+                'qr_id' => $qrId,
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Devolver JSON en lugar de HTML para peticiones de API
+            if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al cargar el documento original: ' . $e->getMessage(),
+                    'qr_id' => $qrId
+                ], 500);
+            }
             abort(404, 'Error al cargar el documento original');
         }
     }

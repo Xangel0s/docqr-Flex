@@ -107,9 +107,22 @@ export interface StatsResponse {
   providedIn: 'root'
 })
 export class DocqrService {
-  private apiUrl = `${environment.apiUrl}`;
+  private apiUrl: string;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Detectar si estamos en HTTPS (ngrok) y usar URL relativa para evitar Mixed Content
+    // Si apiUrl es absoluto y comienza con http://, y estamos en HTTPS, usar URL relativa
+    if (environment.apiUrl.startsWith('http://') && window.location.protocol === 'https:') {
+      // Usar URL relativa para evitar Mixed Content
+      this.apiUrl = '/api';
+    } else if (environment.apiUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
+      // Si estamos en HTTPS pero apiUrl apunta a localhost HTTP, usar URL relativa
+      this.apiUrl = '/api';
+    } else {
+      // Usar la URL configurada normalmente
+      this.apiUrl = `${environment.apiUrl}`;
+    }
+  }
 
   /**
    * Subir PDF y generar QR
@@ -221,6 +234,56 @@ export class DocqrService {
   }
 
   /**
+   * Obtener todos los documentos sin paginación para exportar
+   */
+  getAllDocumentsForExport(
+    search?: string,
+    filters?: {
+      type?: string;
+      status?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      scansFilter?: string;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    }
+  ): Observable<DocumentsResponse> {
+    let params = new HttpParams()
+      .set('per_page', '10000'); // Número grande para obtener todos
+
+    if (search) {
+      params = params.set('search', search);
+    }
+
+    // Aplicar filtros adicionales
+    if (filters) {
+      if (filters.type && filters.type !== 'all') {
+        params = params.set('type', filters.type);
+      }
+      if (filters.status && filters.status !== 'all') {
+        params = params.set('status', filters.status);
+      }
+      if (filters.dateFrom) {
+        params = params.set('date_from', filters.dateFrom);
+      }
+      if (filters.dateTo) {
+        params = params.set('date_to', filters.dateTo);
+      }
+      if (filters.scansFilter && filters.scansFilter !== 'all') {
+        params = params.set('scans_filter', filters.scansFilter);
+      }
+      if (filters.sortBy) {
+        params = params.set('sort_by', filters.sortBy);
+      }
+      if (filters.sortOrder) {
+        params = params.set('sort_order', filters.sortOrder);
+      }
+    }
+
+    return this.http.get<DocumentsResponse>(`${this.apiUrl}/documents`, { params });
+  }
+
+  /**
    * Obtener estadísticas
    */
   getStats(): Observable<StatsResponse> {
@@ -318,6 +381,17 @@ export class DocqrService {
       type,
       month
     });
+  }
+
+  /**
+   * Regenerar QR code con URL actualizada
+   * Útil para corregir QRs que tienen URLs con localhost
+   */
+  regenerateQr(qrId: string): Observable<{ success: boolean; message: string; data: any }> {
+    return this.http.post<{ success: boolean; message: string; data: any }>(
+      `${this.apiUrl}/documents/qr/${qrId}/regenerate-qr`,
+      {}
+    );
   }
 }
 

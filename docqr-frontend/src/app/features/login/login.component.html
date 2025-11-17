@@ -1,0 +1,78 @@
+<div class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center px-4 py-12">
+  <div class="max-w-md w-full">
+    <!-- Logo y Título -->
+    <div class="text-center mb-8">
+      <div class="flex justify-center mb-6">
+        <img 
+          src="assets/images/geofal.png" 
+          alt="Geofal Logo" 
+          class="h-24 w-auto object-contain"
+          onerror="this.src='assets/images/geofal-logo-placeholder.svg'">
+      </div>
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">Sistema de Documentos QR</h1>
+      <p class="text-gray-600">Inicia sesión para continuar</p>
+    </div>
+
+    <!-- Formulario de Login -->
+    <div class="bg-white rounded-xl shadow-lg p-8">
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="space-y-6">
+        <!-- Usuario -->
+        <div>
+          <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
+            Usuario
+          </label>
+          <input
+            id="username"
+            type="text"
+            formControlName="username"
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            placeholder="Ingresa tu usuario"
+            [class.border-red-500]="loginForm.get('username')?.invalid && loginForm.get('username')?.touched">
+          <div *ngIf="loginForm.get('username')?.invalid && loginForm.get('username')?.touched" 
+               class="mt-1 text-sm text-red-600">
+            El usuario es requerido
+          </div>
+        </div>
+
+        <!-- Contraseña -->
+        <div>
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+            Contraseña
+          </label>
+          <input
+            id="password"
+            type="password"
+            formControlName="password"
+            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            placeholder="Ingresa tu contraseña"
+            [class.border-red-500]="loginForm.get('password')?.invalid && loginForm.get('password')?.touched">
+          <div *ngIf="loginForm.get('password')?.invalid && loginForm.get('password')?.touched" 
+               class="mt-1 text-sm text-red-600">
+            La contraseña es requerida
+          </div>
+        </div>
+
+        <!-- Mensaje de Error -->
+        <div *ngIf="errorMessage" class="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p class="text-sm text-red-800">{{ errorMessage }}</p>
+        </div>
+
+        <!-- Botón de Login -->
+        <button
+          type="submit"
+          [disabled]="loading"
+          class="w-full bg-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+          <span *ngIf="loading" class="material-symbols-outlined animate-spin">sync</span>
+          <span *ngIf="!loading">Iniciar Sesión</span>
+          <span *ngIf="loading">Iniciando sesión...</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <div class="mt-6 text-center text-sm text-gray-600">
+      <p>&copy; 2025 Geofal S.A.C. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</div>
+

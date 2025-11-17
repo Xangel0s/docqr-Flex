@@ -13,17 +13,36 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'view/*', 'api/files/*'],
+    'paths' => ['api/*', 'view/*', 'api/files/*', 'files/*'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
+    'allowed_origins' => array_merge([
         'https://docqr.geofal.com.pe',
         'http://localhost:4200',
         'http://127.0.0.1:4200',
-    ],
+    ], in_array(env('APP_ENV', 'production'), ['local', 'development']) ? ['*'] : []),
 
-    'allowed_origins_patterns' => [],
+    /*
+    |--------------------------------------------------------------------------
+    | URLs de ngrok para pruebas de producción
+    |--------------------------------------------------------------------------
+    |
+    | Las URLs de ngrok cambian cada vez que se reinicia (versión gratuita).
+    | Agrega aquí la URL de ngrok cuando la obtengas, o usa allowed_origins_patterns
+    | para permitir todas las URLs de ngrok automáticamente.
+    |
+    */
+
+    'allowed_origins_patterns' => array_merge([
+        // Permitir todas las URLs de ngrok (ej: https://abc123.ngrok.io)
+        '#^https://[a-z0-9-]+\.ngrok\.io$#',
+        '#^https://[a-z0-9-]+\.ngrok-free\.app$#',
+        '#^https://[a-z0-9-]+\.ngrok-free\.dev$#',
+    ], in_array(env('APP_ENV', 'production'), ['local', 'development']) ? [
+        // En desarrollo, permitir cualquier origen (útil para ngrok y localhost)
+        '#.*#'
+    ] : []),
 
     'allowed_headers' => ['*'],
 

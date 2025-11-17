@@ -54,7 +54,25 @@ class PdfProcessorService
             }
 
             // Importar la primera página del PDF
-            $pageCount = $pdf->setSourceFile($fullPdfPath);
+            // Si el PDF está protegido con contraseña, FPDI lanzará una excepción
+            // Por ahora intentamos sin contraseña (la mayoría de PDFs no están protegidos)
+            try {
+                $pageCount = $pdf->setSourceFile($fullPdfPath);
+            } catch (\setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException $e) {
+                // Si el PDF está protegido con contraseña, FPDI puede lanzar esta excepción
+                $errorMsg = $e->getMessage();
+                if (stripos($errorMsg, 'password') !== false || 
+                    stripos($errorMsg, 'encrypted') !== false ||
+                    stripos($errorMsg, 'protected') !== false) {
+                    Log::warning('PDF protegido con contraseña detectado:', [
+                        'pdf_path' => $pdfPath,
+                        'error' => $errorMsg
+                    ]);
+                    throw new \Exception("El PDF está protegido con contraseña. No se puede procesar automáticamente. Por favor, desbloquee el PDF antes de subirlo.");
+                }
+                // Re-lanzar si es otro tipo de error
+                throw $e;
+            }
             
             if ($pageCount === 0) {
                 throw new \Exception("El PDF no tiene páginas válidas");
@@ -408,8 +426,23 @@ class PdfProcessorService
             return $finalPath;
 
         } catch (\Exception $e) {
-            \Log::error('Error al procesar PDF: ' . $e->getMessage());
-            throw new \Exception("Error al embebir QR en PDF: " . $e->getMessage());
+            $errorMessage = $e->getMessage();
+            \Log::error('Error al procesar PDF: ' . $errorMessage, [
+                'pdf_path' => $pdfPath,
+                'qr_path' => $qrPath,
+                'position' => $position,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Preservar el mensaje original para que el frontend pueda detectar errores de FPDI
+            // Si el error es de compresión de FPDI, mantener el mensaje original
+            if (stripos($errorMessage, 'compression') !== false || 
+                stripos($errorMessage, 'not supported by the free parser') !== false ||
+                stripos($errorMessage, 'FPDI') !== false) {
+                throw new \Exception($errorMessage);
+            }
+            
+            throw new \Exception("Error al embebir QR en PDF: " . $errorMessage);
         }
     }
 

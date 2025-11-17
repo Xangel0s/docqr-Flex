@@ -55,13 +55,37 @@
     </div>
 
     <!-- Usuario -->
-    <div class="flex items-center gap-3">
-      <div class="flex items-center gap-2">
+    <div class="relative flex items-center gap-3">
+      <button
+        type="button"
+        (click)="toggleUserMenu()"
+        class="flex items-center gap-2 hover:opacity-80 transition-opacity">
         <div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
-          A
+          {{ currentUser?.name?.charAt(0)?.toUpperCase() || 'A' }}
         </div>
         <div class="hidden sm:block">
-          <p class="text-sm font-medium text-gray-900">Administrador</p>
+          <p class="text-sm font-medium text-gray-900">{{ currentUser?.name || 'Administrador' }}</p>
+        </div>
+        <span class="material-symbols-outlined text-gray-600">arrow_drop_down</span>
+      </button>
+
+      <!-- Menú de usuario -->
+      <div 
+        *ngIf="showUserMenu"
+        class="absolute right-0 top-full mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50"
+        (click)="$event.stopPropagation()">
+        <div class="p-2">
+          <div class="px-3 py-2 border-b border-gray-200">
+            <p class="text-sm font-medium text-gray-900">{{ currentUser?.name }}</p>
+            <p class="text-xs text-gray-500">{{ currentUser?.username }}</p>
+          </div>
+          <button
+            type="button"
+            (click)="logout(); closeUserMenu()"
+            class="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition-colors flex items-center gap-2">
+            <span class="material-symbols-outlined text-lg">logout</span>
+            Cerrar Sesión
+          </button>
         </div>
       </div>
     </div>
@@ -75,11 +99,11 @@
     </button>
   </div>
 
-  <!-- Overlay para cerrar menú al hacer click fuera -->
+  <!-- Overlay para cerrar menús al hacer click fuera -->
   <div 
-    *ngIf="showNotificationMenu"
+    *ngIf="showNotificationMenu || showUserMenu"
     class="fixed inset-0 z-40"
-    (click)="closeNotificationMenu()">
+    (click)="closeNotificationMenu(); closeUserMenu()">
   </div>
 </header>
 

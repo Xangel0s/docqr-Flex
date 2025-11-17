@@ -67,7 +67,8 @@ class QrFile extends Model
      */
     public function getViewUrlAttribute(): string
     {
-        return url("/api/view/{$this->qr_id}");
+        // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
+        return \App\Helpers\UrlHelper::url("/api/view/{$this->qr_id}", request());
     }
 
     /**

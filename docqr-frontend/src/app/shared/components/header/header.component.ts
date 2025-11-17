@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { DocqrService } from '../../../core/services/docqr.service';
 import { NotificationService } from '../../../core/services/notification.service';
+import { AuthService, User } from '../../../core/services/auth.service';
 import { interval, Subscription } from 'rxjs';
 
 /**
@@ -16,10 +17,14 @@ import { interval, Subscription } from 'rxjs';
   styleUrls: ['./header.component.scss']
 })
 export class HeaderComponent implements OnInit, OnDestroy {
-  // Logo Geofal - usar placeholder por ahora
-  logoPath = '/assets/images/geofal-logo-placeholder.svg';
+  // Logo Geofal
+  logoPath = '/assets/images/geofal.png';
   
   @Output() toggleSidebar = new EventEmitter<void>();
+
+  // Usuario actual
+  currentUser: User | null = null;
+  showUserMenu: boolean = false;
 
   // Estado de compresión
   hasCompressionAlert: boolean = false;
@@ -31,10 +36,17 @@ export class HeaderComponent implements OnInit, OnDestroy {
 
   constructor(
     private docqrService: DocqrService,
-    private notificationService: NotificationService
+    private notificationService: NotificationService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    // Obtener usuario actual
+    this.currentUser = this.authService.getCurrentUser();
+    this.authService.currentUser$.subscribe(user => {
+      this.currentUser = user;
+    });
+
     // Verificar estado de compresión al cargar
     this.checkCompressionStatus();
     
@@ -97,6 +109,28 @@ export class HeaderComponent implements OnInit, OnDestroy {
     this.notificationService.showInfo(
       `Hay ${this.compressionCount} documentos antiguos pendientes de compresión. Ejecuta el comando de compresión desde el servidor.`
     );
+  }
+
+  /**
+   * Toggle del menú de usuario
+   */
+  toggleUserMenu(): void {
+    this.showUserMenu = !this.showUserMenu;
+  }
+
+  /**
+   * Cerrar menú de usuario
+   */
+  closeUserMenu(): void {
+    this.showUserMenu = false;
+  }
+
+  /**
+   * Logout
+   */
+  logout(): void {
+    this.authService.logout();
+    this.notificationService.showSuccess('Sesión cerrada exitosamente');
   }
 }
 
