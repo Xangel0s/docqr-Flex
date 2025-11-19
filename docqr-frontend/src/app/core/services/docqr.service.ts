@@ -112,15 +112,20 @@ export class DocqrService {
   constructor(private http: HttpClient) {
     // Detectar si estamos en HTTPS (ngrok) y usar URL relativa para evitar Mixed Content
     // Si apiUrl es absoluto y comienza con http://, y estamos en HTTPS, usar URL relativa
-    if (environment.apiUrl.startsWith('http://') && window.location.protocol === 'https:') {
+    let baseUrl = environment.apiUrl;
+    
+    if (baseUrl.startsWith('http://') && window.location.protocol === 'https:') {
       // Usar URL relativa para evitar Mixed Content
       this.apiUrl = '/api';
-    } else if (environment.apiUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
+    } else if (baseUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
       // Si estamos en HTTPS pero apiUrl apunta a localhost HTTP, usar URL relativa
       this.apiUrl = '/api';
     } else {
-      // Usar la URL configurada normalmente
-      this.apiUrl = `${environment.apiUrl}`;
+      // Asegurar que apiUrl termine con /api si no está presente
+      // Remover /api si ya está al final para evitar duplicación
+      baseUrl = baseUrl.replace(/\/api\/?$/, '');
+      // Agregar /api al final
+      this.apiUrl = `${baseUrl}/api`;
     }
   }
 
@@ -203,9 +208,9 @@ export class DocqrService {
   }
 
   /**
-   * Obtener un documento específico por ID
+   * Obtener un documento específico por ID numérico
    */
-  getDocument(id: number): Observable<{ success: boolean; data: Document }> {
+  getDocumentById(id: number): Observable<{ success: boolean; data: Document }> {
     return this.http.get<{ success: boolean; data: Document }>(`${this.apiUrl}/documents/${id}`);
   }
 
@@ -214,6 +219,60 @@ export class DocqrService {
    */
   getDocumentByQrId(qrId: string): Observable<{ success: boolean; data: Document }> {
     return this.http.get<{ success: boolean; data: Document }>(`${this.apiUrl}/documents/qr/${qrId}`);
+  }
+
+
+  /**
+   * Crear documento y generar QR sin PDF (para flujo "Adjuntar")
+   */
+  createDocumentWithoutPdf(folderName: string): Observable<{
+    success: boolean;
+    message: string;
+    data: {
+      qr_id: string;
+      qr_url: string;
+      qr_image_url: string;
+      folder_name: string;
+    };
+  }> {
+    return this.http.post<{
+      success: boolean;
+      message: string;
+      data: {
+        qr_id: string;
+        qr_url: string;
+        qr_image_url: string;
+        folder_name: string;
+      };
+    }>(`${this.apiUrl}/documents/create`, {
+      folder_name: folderName
+    });
+  }
+
+  /**
+   * Adjuntar PDF a un documento existente (sin procesar)
+   */
+  attachPdf(qrId: string, file: File): Observable<{
+    success: boolean;
+    message: string;
+    data: {
+      pdf_url: string;
+      original_filename: string;
+      file_size: number;
+    };
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.http.post<{
+      success: boolean;
+      message: string;
+      data: {
+        pdf_url: string;
+        original_filename: string;
+        file_size: number;
+      };
+    }>(`${this.apiUrl}/documents/qr/${qrId}/attach-pdf`, formData);
   }
 
   /**

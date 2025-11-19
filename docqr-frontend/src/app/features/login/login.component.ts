@@ -4,6 +4,7 @@ import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angula
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -49,16 +50,42 @@ export class LoginComponent implements OnInit {
 
     this.authService.login(username, password).subscribe({
       next: (response) => {
-        if (response.success) {
-          this.notificationService.showSuccess('Bienvenido a Geofal');
-          this.router.navigate(['/']);
+        if (response && response.success) {
+          // El token ya se guardó en el tap() del servicio (síncrono)
+          // Usar setTimeout para asegurar que localStorage se haya actualizado
+          setTimeout(() => {
+            // Verificar que esté guardado antes de navegar
+            if (this.authService.isAuthenticated()) {
+              this.notificationService.showSuccess('Bienvenido a Geofal');
+              this.loading = false;
+              // Navegar inmediatamente - el token ya está guardado
+              this.router.navigate(['/']).then(() => {
+                // Navegación exitosa
+              }).catch(() => {
+                // Si la navegación falla, usar window.location como fallback
+                window.location.href = '/';
+              });
+            } else {
+              // Si no hay token después del login exitoso, hay un problema
+              if (!environment.production) {
+                console.error('Login exitoso pero token no guardado. Respuesta:', response);
+                console.error('Token en localStorage:', localStorage.getItem('geofal_token'));
+              }
+              this.errorMessage = 'Error al guardar la sesión. Intenta nuevamente.';
+              this.loading = false;
+              this.notificationService.showError(this.errorMessage);
+            }
+          }, 50); // Pequeño delay para asegurar que localStorage se actualice
         } else {
-          this.errorMessage = response.message || 'Error al iniciar sesión';
+          this.errorMessage = response?.message || 'Error al iniciar sesión';
           this.loading = false;
+          this.notificationService.showError(this.errorMessage);
         }
       },
       error: (error) => {
-        console.error('Error en login:', error);
+        if (!environment.production) {
+          console.error('Error en login:', error);
+        }
         this.errorMessage = error?.error?.message || 'Usuario o contraseña incorrectos';
         this.loading = false;
         this.notificationService.showError(this.errorMessage);

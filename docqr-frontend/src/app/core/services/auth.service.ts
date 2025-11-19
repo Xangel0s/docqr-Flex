@@ -18,8 +18,12 @@ export interface LoginResponse {
   message: string;
   data: {
     user: User;
-    token: string;
+    token?: string;
+    access_token?: string;
   };
+  // También puede venir a nivel raíz para compatibilidad
+  token?: string;
+  access_token?: string;
 }
 
 @Injectable({
@@ -39,15 +43,20 @@ export class AuthService {
   ) {
     // Detectar si estamos en HTTPS (ngrok) y usar URL relativa para evitar Mixed Content
     // Si apiUrl es absoluto y comienza con http://, y estamos en HTTPS, usar URL relativa
-    if (environment.apiUrl.startsWith('http://') && window.location.protocol === 'https:') {
+    let baseUrl = environment.apiUrl;
+    
+    if (baseUrl.startsWith('http://') && window.location.protocol === 'https:') {
       // Usar URL relativa para evitar Mixed Content
       this.apiUrl = '/api';
-    } else if (environment.apiUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
+    } else if (baseUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
       // Si estamos en HTTPS pero apiUrl apunta a localhost HTTP, usar URL relativa
       this.apiUrl = '/api';
     } else {
-      // Usar la URL configurada normalmente
-      this.apiUrl = environment.apiUrl;
+      // Asegurar que apiUrl termine con /api si no está presente
+      // Remover /api si ya está al final para evitar duplicación
+      baseUrl = baseUrl.replace(/\/api\/?$/, '');
+      // Agregar /api al final
+      this.apiUrl = `${baseUrl}/api`;
     }
   }
 
@@ -60,14 +69,41 @@ export class AuthService {
       password
     }).pipe(
       tap(response => {
-        if (response.success && response.data) {
-          this.setToken(response.data.token);
-          this.setUser(response.data.user);
-          this.currentUserSubject.next(response.data.user);
+        // CRÍTICO: Guardar token y usuario de forma síncrona antes de que el next() se ejecute
+        // Esto asegura que cuando el componente verifique isAuthenticated(), el token ya esté guardado
+        if (response && response.success && response.data) {
+          // CORRECCIÓN: Usar access_token primero, luego token como fallback
+          // El backend envía access_token (Sanctum) pero también puede enviar token para compatibilidad
+          const token = response.data?.access_token || response.data?.token || response.access_token || response.token;
+          
+          if (token && typeof token === 'string' && token.length > 0) {
+            // Guardar inmediatamente de forma síncrona
+            try {
+              this.setToken(token);
+              if (response.data.user) {
+                this.setUser(response.data.user);
+                this.currentUserSubject.next(response.data.user);
+              }
+            } catch (error) {
+              if (!environment.production) {
+                console.error('Error al guardar token en localStorage:', error);
+              }
+            }
+          } else {
+            if (!environment.production) {
+              console.error('No se recibió token válido en la respuesta del login:', response);
+            }
+          }
+        } else {
+          if (!environment.production) {
+            console.error('Respuesta de login inválida:', response);
+          }
         }
       }),
       catchError(error => {
-        console.error('Error en login:', error);
+        if (!environment.production) {
+          console.error('Error en login:', error);
+        }
         throw error;
       })
     );
@@ -118,6 +154,7 @@ export class AuthService {
     return this.http.get<{ success: boolean; data?: { user: User } }>(`${this.apiUrl}/auth/me`).pipe(
       tap(response => {
         if (response.success && response.data) {
+          // Actualizar usuario en caché (localStorage y BehaviorSubject)
           this.setUser(response.data.user);
           this.currentUserSubject.next(response.data.user);
         } else {
@@ -139,10 +176,38 @@ export class AuthService {
   }
 
   /**
+   * Refrescar datos del usuario desde el servidor
+   * Útil cuando se actualiza el perfil del usuario
+   */
+  refreshUser(): Observable<{ success: boolean; data?: { user: User } }> {
+    return this.checkAuth();
+  }
+
+  /**
    * Guardar token
    */
   private setToken(token: string): void {
-    localStorage.setItem(this.tokenKey, token);
+    try {
+      if (token && typeof token === 'string' && token.length > 0) {
+        localStorage.setItem(this.tokenKey, token);
+        // Verificar que se guardó correctamente
+        const savedToken = localStorage.getItem(this.tokenKey);
+        if (savedToken !== token) {
+          if (!environment.production) {
+            console.error('Error: El token no se guardó correctamente en localStorage');
+          }
+        }
+      } else {
+        if (!environment.production) {
+          console.error('Error: Intento de guardar token inválido:', token);
+        }
+      }
+    } catch (error) {
+      if (!environment.production) {
+        console.error('Error al guardar token en localStorage:', error);
+      }
+      throw error;
+    }
   }
 
   /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\QrFile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
@@ -21,32 +22,47 @@ class FileController extends Controller
      * 
      * @param string $qrId ID del QR
      * @param Request $request Request HTTP para validar ETag
-     * @return Response
+     * @return Response|JsonResponse
      */
-    public function servePdf(string $qrId, Request $request): Response
+    public function servePdf(string $qrId, Request $request): Response|JsonResponse
     {
         try {
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
+                Log::warning('Intento de acceso con qr_id inválido en servePdf:', ['qr_id' => $qrId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ID de documento inválido'
+                ], 400);
+            }
+            
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            if ($qrFile->final_path) {
-                $filePath = str_replace('final/', '', $qrFile->final_path);
-                $disk = 'final';
-                $fullPath = Storage::disk($disk)->path($filePath);
-            } elseif ($qrFile->file_path) {
-                $fullPath = Storage::disk('local')->path($qrFile->file_path);
-            } else {
+            // Usar helper compartido para determinar qué archivo servir
+            // Priorización: final_path > file_path > rutas alternativas
+            $pdfInfo = \App\Helpers\PdfPathHelper::getPdfPathToServe($qrFile);
+            
+            if (!$pdfInfo) {
+                // Devolver JSON en lugar de HTML para peticiones de API
+                if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'El documento no tiene archivo PDF configurado',
+                        'qr_id' => $qrId
+                    ], 404)->header('Content-Type', 'application/json');
+                }
                 abort(404, 'Archivo PDF no encontrado');
             }
-
-            if (!file_exists($fullPath)) {
-                abort(404, 'Archivo PDF no encontrado');
-            }
+            
+            $filePath = $pdfInfo['filePath'];
+            $disk = $pdfInfo['disk'];
+            $fullPath = $pdfInfo['fullPath'];
+            $isFinalPdf = ($pdfInfo['type'] === 'final');
 
             $content = file_get_contents($fullPath);
             $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFile->original_filename);
             
             $isProduction = app()->environment('production');
-            $isFinalPdf = (bool) $qrFile->final_path;
             
             if ($isFinalPdf) {
                 $cacheControl = 'no-cache, no-store, must-revalidate, private';
@@ -66,14 +82,28 @@ class FileController extends Controller
             
             $etag = md5($fullPath . filemtime($fullPath));
             
-            $response = response($content, 200)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
-                ->header('Content-Length', strlen($content))
-                ->header('Cache-Control', $cacheControl)
-                ->header('ETag', $etag)
-                ->header('X-Content-Type-Options', 'nosniff')
-                ->header('X-Content-Security-Policy', "default-src 'self'");
+            // CRÍTICO: Forzar Content-Type como PDF, nunca HTML
+            // Esto previene que el navegador interprete el PDF como HTML
+            $response = response($content, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
+                'Content-Length' => (string) strlen($content),
+                'Cache-Control' => $cacheControl,
+                'ETag' => $etag,
+                'X-Content-Type-Options' => 'nosniff',
+                'X-Content-Security-Policy' => "default-src 'self'",
+            ]);
+            
+            // Añadir headers CORS explícitamente (igual que serveOriginalPdf)
+            $origin = $request->header('Origin');
+            $allowedOrigins = ['https://docqr.geofal.com.pe', 'http://localhost:4200'];
+            if ($origin && (in_array($origin, $allowedOrigins) || app()->environment('local'))) {
+                $response->header('Access-Control-Allow-Origin', $origin);
+                $response->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With');
+                $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
+                $response->header('Access-Control-Allow-Credentials', 'false');
+            }
             
             if ($pragma) {
                 $response->header('Pragma', $pragma);
@@ -82,11 +112,8 @@ class FileController extends Controller
                 $response->header('Expires', $expires);
             }
             
-            if ($isProduction) {
-                $response->header('X-Frame-Options', 'SAMEORIGIN')
-                         ->header('X-XSS-Protection', '1; mode=block')
-                         ->header('Referrer-Policy', 'strict-origin-when-cross-origin');
-            }
+            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
+            // Solo mantenemos Cache-Control específico para este endpoint
             
             if ($request->header('If-None-Match') === $etag) {
                 return response('', 304)
@@ -96,8 +123,33 @@ class FileController extends Controller
             
             return $response;
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::warning('PDF no encontrado (documento no existe en BD):', [
+                'qr_id' => $qrId,
+                'error' => $e->getMessage()
+            ]);
+            // Devolver JSON en lugar de HTML para peticiones de API
+            if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Documento no encontrado',
+                    'qr_id' => $qrId
+                ], 404)->header('Content-Type', 'application/json');
+            }
+            abort(404, 'Archivo PDF no encontrado');
         } catch (\Exception $e) {
-            Log::error('Error al servir PDF: ' . $e->getMessage());
+            Log::error('Error al servir PDF: ' . $e->getMessage(), [
+                'qr_id' => $qrId,
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Devolver JSON en lugar de HTML para peticiones de API
+            if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al cargar el documento: ' . $e->getMessage(),
+                    'qr_id' => $qrId
+                ], 500)->header('Content-Type', 'application/json');
+            }
             abort(404, 'Error al cargar el documento');
         }
     }
@@ -107,11 +159,20 @@ class FileController extends Controller
      * Útil para el editor que necesita trabajar con el PDF sin QR
      * 
      * @param string $qrId ID del QR
-     * @return Response
+     * @return Response|JsonResponse
      */
-    public function serveOriginalPdf(string $qrId, Request $request): Response
+    public function serveOriginalPdf(string $qrId, Request $request): Response|JsonResponse
     {
         try {
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
+                Log::warning('Intento de acceso con qr_id inválido en serveOriginalPdf:', ['qr_id' => $qrId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ID de documento inválido'
+                ], 400);
+            }
+            
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
             if (!$qrFile->file_path) {
@@ -128,31 +189,77 @@ class FileController extends Controller
             $fullPath = Storage::disk('local')->path($qrFile->file_path);
 
             if (!file_exists($fullPath)) {
+                // Intentar buscar en rutas alternativas (especialmente para documentos antiguos)
                 $possiblePaths = [
                     $fullPath,
                     storage_path('app/' . $qrFile->file_path),
                     base_path('storage/app/' . $qrFile->file_path),
-                    str_replace('uploads/', 'storage/app/uploads/', $qrFile->file_path),
                 ];
+                
+                // Si file_path contiene "uploads/", buscar también sin el prefijo
+                if (str_contains($qrFile->file_path, 'uploads/')) {
+                    $pathWithoutUploads = str_replace('uploads/', '', $qrFile->file_path);
+                    $possiblePaths[] = storage_path('app/uploads/' . $pathWithoutUploads);
+                    $possiblePaths[] = base_path('storage/app/uploads/' . $pathWithoutUploads);
+                    $possiblePaths[] = public_path('uploads/' . $pathWithoutUploads);
+                }
+                
+                // Buscar por nombre de archivo en uploads si no se encuentra
+                if ($qrFile->original_filename) {
+                    $filename = basename($qrFile->original_filename);
+                    $possiblePaths[] = storage_path('app/uploads/' . $filename);
+                    $possiblePaths[] = base_path('storage/app/uploads/' . $filename);
+                    $possiblePaths[] = public_path('uploads/' . $filename);
+                    
+                    // Buscar recursivamente en uploads
+                    $uploadsDir = storage_path('app/uploads');
+                    if (is_dir($uploadsDir)) {
+                        $iterator = new \RecursiveIteratorIterator(
+                            new \RecursiveDirectoryIterator($uploadsDir, \RecursiveDirectoryIterator::SKIP_DOTS),
+                            \RecursiveIteratorIterator::SELF_FIRST
+                        );
+                        foreach ($iterator as $file) {
+                            if ($file->isFile() && $file->getFilename() === $filename) {
+                                $possiblePaths[] = $file->getPathname();
+                                break;
+                            }
+                        }
+                    }
+                }
                 
                 $foundPath = null;
                 foreach ($possiblePaths as $possiblePath) {
-                    if (file_exists($possiblePath) && is_file($possiblePath)) {
+                    if ($possiblePath && file_exists($possiblePath) && is_file($possiblePath)) {
                         $foundPath = $possiblePath;
+                        Log::info('PDF original encontrado en ruta alternativa:', [
+                            'qr_id' => $qrId,
+                            'ruta_original' => $fullPath,
+                            'ruta_encontrada' => $foundPath
+                        ]);
                         break;
                     }
                 }
                 
                 if (!$foundPath) {
+                    Log::error('PDF original no encontrado físicamente después de buscar en todas las ubicaciones:', [
+                        'qr_id' => $qrId,
+                        'file_path' => $qrFile->file_path,
+                        'original_filename' => $qrFile->original_filename,
+                        'full_path' => $fullPath,
+                        'storage_exists' => Storage::disk('local')->exists($qrFile->file_path),
+                        'rutas_buscadas' => array_filter($possiblePaths)
+                    ]);
+                    
                     if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
                         return response()->json([
                             'success' => false,
                             'message' => 'El archivo PDF original no existe físicamente en el servidor. El editor requiere el PDF original sin QR.',
                             'qr_id' => $qrId,
                             'file_path' => $qrFile->file_path,
+                            'original_filename' => $qrFile->original_filename,
                             'full_path' => $fullPath,
                             'storage_exists' => Storage::disk('local')->exists($qrFile->file_path)
-                        ], 404);
+                        ], 404)->header('Content-Type', 'application/json');
                     }
                     abort(404, 'Archivo PDF original no encontrado. El editor requiere el PDF original sin QR.');
                 } else {
@@ -182,14 +289,17 @@ class FileController extends Controller
             
             $etag = md5($fullPath . (file_exists($fullPath) ? filemtime($fullPath) : 0));
             
-            $response = response($content, 200)
-                ->header('Content-Type', 'application/pdf')
-                ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
-                ->header('Content-Length', strlen($content))
-                ->header('Cache-Control', $cacheControl)
-                ->header('ETag', $etag)
-                ->header('X-Content-Type-Options', 'nosniff')
-                ->header('X-Accel-Buffering', 'no');
+            // CRÍTICO: Forzar Content-Type como PDF, nunca HTML
+            // Esto previene que el navegador interprete el PDF como HTML
+            $response = response($content, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
+                'Content-Length' => (string) strlen($content),
+                'Cache-Control' => $cacheControl,
+                'ETag' => $etag,
+                'X-Content-Type-Options' => 'nosniff',
+                'X-Accel-Buffering' => 'no',
+            ]);
             
             $origin = $request->header('Origin');
             if ($origin) {
@@ -199,22 +309,14 @@ class FileController extends Controller
                 $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition');
             }
             
-            if (str_contains($request->header('Host', ''), 'ngrok') || 
-                str_contains($request->header('X-Forwarded-Host', ''), 'ngrok')) {
-                $response->header('X-Frame-Options', 'ALLOWALL');
-            }
+            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
+            // El caso especial de ngrok también se maneja en SecurityHeaders
             
             if ($pragma) {
                 $response->header('Pragma', $pragma);
             }
             if ($expires) {
                 $response->header('Expires', $expires);
-            }
-            
-            if ($isProduction) {
-                $response->header('X-Frame-Options', 'SAMEORIGIN')
-                         ->header('X-XSS-Protection', '1; mode=block')
-                         ->header('Referrer-Policy', 'strict-origin-when-cross-origin');
             }
             
             if ($request->header('If-None-Match') === $etag) {
@@ -265,6 +367,12 @@ class FileController extends Controller
     public function serveQr(string $qrId, Request $request): Response
     {
         try {
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
+                Log::warning('Intento de acceso con qr_id inválido en serveQr:', ['qr_id' => $qrId]);
+                abort(400, 'ID de documento inválido');
+            }
+            
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
             if (!$qrFile->qr_path) {
@@ -304,11 +412,7 @@ class FileController extends Controller
                 ->header('ETag', $etag)
                 ->header('X-Content-Type-Options', 'nosniff');
             
-            // Headers de seguridad en producción
-            if ($isProduction) {
-                $response->header('X-Frame-Options', 'SAMEORIGIN')
-                         ->header('X-XSS-Protection', '1; mode=block');
-            }
+            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
             
             // Validar ETag del cliente
             if ($request->header('If-None-Match') === $etag) {

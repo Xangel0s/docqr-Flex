@@ -1,5 +1,6 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Title } from '@angular/platform-browser';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { DocqrService, Document } from '../../core/services/docqr.service';
@@ -49,6 +50,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   private pdfObject: FabricImage | null = null; // PDF como objeto bloqueado
   private qrObject: FabricImage | null = null;
   
+  // Bandera para prevenir correcciones múltiples simultáneas que causan movimiento
+  private isCorrectingQrPosition: boolean = false;
+  
+  // Bandera para prevenir logs/alertas múltiples cuando el QR está en el límite
+  private lastSizeWarningTime: number = 0;
+  private readonly SIZE_WARNING_COOLDOWN = 1000; // 1 segundo entre advertencias
+  
   // PDF.js
   private pdfDoc: any = null;
   private pdfPage: any = null;
@@ -80,7 +88,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     private router: Router,
     private docqrService: DocqrService,
     private notificationService: NotificationService,
-    private http: HttpClient
+    private http: HttpClient,
+    private titleService: Title
   ) {}
 
   ngOnInit(): void {
@@ -122,7 +131,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         if (this.fabricCanvas?.nativeElement) {
           this.initFabricCanvas();
         } else {
-          console.error('No se pudo encontrar el canvas de Fabric.js después de varios intentos');
+          if (!environment.production) {
+            console.error('No se pudo encontrar el canvas de Fabric.js después de varios intentos');
+          }
         }
       }, 100);
       return;
@@ -159,20 +170,37 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       // Configurar controles personalizados
       this.configureFabricControls();
 
-      // Eventos de Fabric.js
-      this.fabricCanvasInstance.on('object:modified', () => {
+      // Eventos de Fabric.js - Solo aplicar al QR
+      this.fabricCanvasInstance.on('object:modified', (e: any) => {
+        // Solo procesar si es el QR (verificar por tipo o referencia)
+        if (this.qrObject && (e.target === this.qrObject || e.target?.type === 'image')) {
         this.onQrModified();
+        }
       });
 
-      this.fabricCanvasInstance.on('object:moving', (e) => {
+      // Prevenir que los controles afecten el QR cuando se mueve
+      this.fabricCanvasInstance.on('object:moving', (e: any) => {
+        // Solo aplicar restricciones si es el QR
+        if (this.qrObject && (e.target === this.qrObject || e.target?.type === 'image')) {
         this.constrainQrToCanvas(e);
+        }
       });
 
-      this.fabricCanvasInstance.on('object:scaling', (e) => {
+      // Prevenir que el QR se rompa al escalar
+      // NOTA: Deshabilitado temporalmente porque el listener 'scaling' del objeto ya maneja esto
+      // y tener ambos puede causar interferencia y movimiento no deseado
+      /*
+      this.fabricCanvasInstance.on('object:scaling', (e: any) => {
+        // Solo aplicar restricciones si es el QR
+        if (this.qrObject && (e.target === this.qrObject || e.target?.type === 'image')) {
         this.constrainQrSize(e);
+        }
       });
+      */
     } catch (error: any) {
-      console.error('Error al inicializar canvas de Fabric.js:', error);
+      if (!environment.production) {
+        console.error('Error al inicializar canvas de Fabric.js:', error);
+      }
     }
   }
 
@@ -228,13 +256,20 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
+      // Establecer título de la página con el nombre del documento
+      const documentTitle = this.document.original_filename || this.document.folder_name || 'Documento';
+      this.titleService.setTitle(`${documentTitle} - Editor - Geofal`);
+
       // URLs - Usar PDF original para el editor (sin QR)
       // Si existe pdf_original_url, usarlo; si no, usar pdf_url como fallback
       // IMPORTANTE: Agregar cache buster para evitar caché del navegador
       // IMPORTANTE: Convertir URLs HTTP a relativas si estamos en HTTPS (ngrok)
       const basePdfUrl = this.document.pdf_original_url || this.document.pdf_url || '';
       this.pdfUrl = basePdfUrl ? this.convertToRelativeIfHttps(`${basePdfUrl}?t=${Date.now()}&editor=true`) : '';
-      this.qrImageUrl = this.convertToRelativeIfHttps(this.document.qr_image_url || '');
+      // Agregar cache buster para evitar que se muestre QR antiguo en caché
+      const baseQrUrl = this.convertToRelativeIfHttps(this.document.qr_image_url || '');
+      const separator = baseQrUrl.includes('?') ? '&' : '?';
+      this.qrImageUrl = `${baseQrUrl}${separator}t=${Date.now()}`;
 
       if (!this.pdfUrl || !this.qrImageUrl) {
         this.notificationService.showError('URLs del documento no disponibles');
@@ -254,8 +289,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       await this.loadQrToFabric();
 
       this.loading = false;
-    } catch (error: any) {
-      console.error('Error al cargar documento:', error);
+      } catch (error: any) {
+        if (!environment.production) {
+          console.error('Error al cargar documento:', error);
+        }
       
       // El error ya fue manejado en renderPdfAsBackground con mensaje específico
       // Solo mostrar mensaje genérico si no hay mensaje específico
@@ -311,7 +348,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           
           const contentType = testResponse.headers.get('content-type');
           if (contentType && !contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
-            console.error('El servidor no está devolviendo un PDF:', contentType);
+            if (!environment.production) {
+              console.error('El servidor no está devolviendo un PDF:', contentType);
+            }
             throw new Error(`El servidor está devolviendo ${contentType} en lugar de application/pdf.`);
           }
         } catch (testError: any) {
@@ -419,13 +458,15 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.fabricCanvasInstance.renderAll();
 
     } catch (error: any) {
-      console.error('Error al renderizar PDF como fondo:', error);
-      console.error('URL del PDF que falló:', this.pdfUrl);
-      console.error('Detalles del error:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
+      if (!environment.production) {
+        console.error('Error al renderizar PDF como fondo:', error);
+        console.error('URL del PDF que falló:', this.pdfUrl);
+        console.error('Detalles del error:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+      }
       
       // Mensajes de error más específicos
       let errorMessage = 'Error al cargar el PDF';
@@ -536,7 +577,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!this.qrImageUrl) {
-      console.error('URL de imagen QR no disponible');
+      if (!environment.production) {
+        console.error('URL de imagen QR no disponible');
+      }
       return;
     }
 
@@ -546,7 +589,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       });
 
       if (!this.fabricCanvasInstance) {
-        console.error('Canvas de Fabric.js se perdió durante la carga');
+        if (!environment.production) {
+          console.error('Canvas de Fabric.js se perdió durante la carga');
+        }
         return;
       }
 
@@ -556,7 +601,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       // Configurar posición inicial o restaurar posición guardada
-      // IMPORTANTE: Usar las coordenadas EXACTAS guardadas, sin redondear ni ajustar
+      // CRÍTICO: Las coordenadas guardadas están en el espacio estándar (595x842)
+      // Necesitamos convertirlas de vuelta al espacio del canvas antes de posicionar el QR
       let x = 50;
       let y = 50;
       let width = 100;
@@ -564,25 +610,269 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       if (this.document?.qr_position) {
         const pos = this.document.qr_position;
-        x = pos.x ?? 50;
-        y = pos.y ?? 50;
-        width = pos.width ?? 100;
-        height = pos.height ?? 100;
+        // Las coordenadas guardadas están en espacio estándar (595x842)
+        const standardX = pos.x ?? 50;
+        const standardY = pos.y ?? 50;
+        const standardWidth = pos.width ?? 100;
+        const standardHeight = pos.height ?? 100;
+        
+        // Obtener dimensiones reales del PDF y escala
+        // CRÍTICO: Estas dimensiones deben estar disponibles después de renderPdfAsBackground()
+        const pdfRealWidth = this.pdfDimensions.originalWidth || this.STANDARD_PDF_WIDTH;
+        const pdfRealHeight = this.pdfDimensions.originalHeight || this.STANDARD_PDF_HEIGHT;
+        const pdfScale = this.pdfDimensions.scale || 1.0;
+        const pdfOffsetX = this.pdfDimensions.offsetX || 0;
+        const pdfOffsetY = this.pdfDimensions.offsetY || 0;
+        
+        // Convertir del espacio estándar (595x842) al espacio real del PDF
+        const qrXInRealPdf = (standardX / this.STANDARD_PDF_WIDTH) * pdfRealWidth;
+        const qrYInRealPdf = (standardY / this.STANDARD_PDF_HEIGHT) * pdfRealHeight;
+        const qrWidthInRealPdf = (standardWidth / this.STANDARD_PDF_WIDTH) * pdfRealWidth;
+        const qrHeightInRealPdf = (standardHeight / this.STANDARD_PDF_HEIGHT) * pdfRealHeight;
+        
+        // Convertir del espacio real del PDF al espacio del canvas (escalado y con offset)
+        // Esta es la conversión inversa de la que se hace al guardar
+        const qrXInCanvas = (qrXInRealPdf * pdfScale) + pdfOffsetX;
+        const qrYInCanvas = (qrYInRealPdf * pdfScale) + pdfOffsetY;
+        const qrWidthInCanvas = qrWidthInRealPdf * pdfScale;
+        const qrHeightInCanvas = qrHeightInRealPdf * pdfScale;
+        
+        // Usar coordenadas convertidas al canvas
+        x = qrXInCanvas;
+        y = qrYInCanvas;
+        width = qrWidthInCanvas;
+        height = qrHeightInCanvas;
+        
+        // Log para debugging (solo en desarrollo y si hay diferencia significativa)
+        if (!environment.production && (Math.abs(standardX - x) > 1 || Math.abs(standardY - y) > 1)) {
+          console.log('Convertiendo coordenadas guardadas al espacio del canvas:', {
+            guardado: { x: standardX, y: standardY, width: standardWidth, height: standardHeight },
+            canvas: { x, y, width, height },
+            pdfDimensions: this.pdfDimensions
+          });
+        }
       }
 
-      // Configurar objeto QR con las coordenadas exactas
+      // Obtener dimensiones originales del QR (debe ser cuadrado 300x300)
+      const originalQrWidth = img.width || 300;
+      const originalQrHeight = img.height || 300;
+      const qrAspectRatio = originalQrWidth / originalQrHeight; // Debe ser 1.0 (cuadrado)
+      
+      // CRÍTICO: Corregir width/height para mantener relación de aspecto PERFECTA
+      // El QR debe ser siempre cuadrado, usar width como referencia para mantener tamaño visual
+      // Esto corrige casos como 125x137 -> 125x125 (no 131x131)
+      let finalWidth = width;
+      let finalHeight = width; // Usar width como referencia, no promedio
+      
+      // Si hay diferencia significativa, corregir inmediatamente
+      const heightDiff = Math.abs(height - width) / Math.max(width, 1);
+      
+      // Log solo en desarrollo
+      if (!environment.production && heightDiff > 0.01) {
+        console.log('Corrigiendo dimensiones del QR al cargar para mantener relación de aspecto:', {
+          original: { width, height },
+          corregido: { width: finalWidth, height: finalHeight },
+          diferencia: { heightDiff: (heightDiff * 100).toFixed(2) + '%' },
+          nota: 'Usando width como referencia para mantener tamaño visual original'
+        });
+      }
+      
+      // Calcular escala uniforme para mantener relación de aspecto
+      // Usar las dimensiones corregidas (ya son iguales)
+      const uniformScale = finalWidth / originalQrWidth;
+      
+      // Configurar objeto QR con las coordenadas exactas y relación de aspecto preservada
+      // IMPORTANTE: Volver a usar 'left' y 'top' como origen (por defecto)
+      // porque 'center' causa que el QR se mueva completamente al centro
+      // En su lugar, usaremos una estrategia diferente para prevenir el movimiento
+      const currentWidth = originalQrWidth * uniformScale;
+      const currentHeight = originalQrHeight * uniformScale;
+      
       img.set({
-        left: x,  // Usar valor exacto sin redondear
-        top: y,   // Usar valor exacto sin redondear
-        scaleX: width / (img.width || 100),
-        scaleY: height / (img.height || 100),
+        left: x,  // Usar valor exacto sin redondear (esquina superior izquierda)
+        top: y,   // Usar valor exacto sin redondear (esquina superior izquierda)
+        scaleX: uniformScale,  // Mismo valor para ambos
+        scaleY: uniformScale,  // Mismo valor para ambos
+        originX: 'left',   // Volver a usar esquina superior izquierda
+        originY: 'top',    // Volver a usar esquina superior izquierda
         selectable: true,
         hasControls: true,
         hasBorders: true,
-        lockRotation: true, // No permitir rotación (como especificaste)
+        lockRotation: true, // No permitir rotación
         lockScalingFlip: true,
-        minScaleLimit: 50 / (img.width || 100), // Tamaño mínimo: 50px
-        maxScaleLimit: 300 / (img.width || 100) // Tamaño máximo: 300px
+        // CRÍTICO: Forzar escalado uniforme (mantener relación de aspecto)
+        lockUniScaling: true, // Esto fuerza que scaleX y scaleY siempre sean iguales
+        minScaleLimit: 50 / originalQrWidth, // Tamaño mínimo: 50px
+        maxScaleLimit: 300 / originalQrWidth // Tamaño máximo: 300px
+      });
+      
+      // Agregar listeners para mantener relación de aspecto SIEMPRE
+      // Listener durante el escalado - PREVENIR que se rompa cuando es muy pequeño
+      // IMPORTANTE: Guardar posición ANTES de modificar para no mover el QR
+      // Usar coordenadas directas del objeto (left/top) en lugar de getBoundingRect()
+      // porque getBoundingRect() puede incluir controles y causar movimiento
+      img.on('scaling', (e: any) => {
+        // Prevenir correcciones múltiples simultáneas
+        if (this.isCorrectingQrPosition) {
+          return;
+        }
+        
+        const obj = e.target as FabricImage;
+        if (obj) {
+          // Activar bandera para prevenir correcciones múltiples
+          this.isCorrectingQrPosition = true;
+          
+          const originalQrWidth = obj.width || 300;
+          const originalQrHeight = obj.height || 300;
+          
+          // CRÍTICO: Guardar el centro ANTES de cualquier modificación
+          // Calcular el centro desde left/top y dimensiones actuales
+          const currentScaleX = obj.scaleX || 1;
+          const currentScaleY = obj.scaleY || 1;
+          const currentWidth = originalQrWidth * currentScaleX;
+          const currentHeight = originalQrHeight * currentScaleY;
+          
+          // Guardar posición actual EXACTA antes de modificar
+          const savedLeft = obj.left || 0;
+          const savedTop = obj.top || 0;
+          
+          // Calcular centro usando posición guardada
+          const savedCenterX = savedLeft + currentWidth / 2;
+          const savedCenterY = savedTop + currentHeight / 2;
+          
+          const minScale = 50 / originalQrWidth; // Tamaño mínimo: 50px
+          const maxScale = 300 / originalQrWidth; // Tamaño máximo: 300px
+          
+          // Obtener el promedio de scaleX y scaleY para mantener relación de aspecto
+          const avgScale = (currentScaleX + currentScaleY) / 2;
+          
+          // Aplicar límites para evitar que se rompa
+          const clampedScale = Math.max(minScale, Math.min(maxScale, avgScale));
+          
+          // Calcular nuevas dimensiones
+          const newWidth = originalQrWidth * clampedScale;
+          const newHeight = originalQrHeight * clampedScale;
+          
+          // CRÍTICO: Calcular nueva posición left/top basándose en el centro guardado
+          // Esto mantiene el centro visual en la misma posición (evita movimiento)
+          const newLeft = savedCenterX - newWidth / 2;
+          const newTop = savedCenterY - newHeight / 2;
+          
+          // CRÍTICO: Verificar si hay cambio significativo antes de aplicar
+          // Si el cambio es menor a 0.001px, no aplicar para evitar movimiento mínimo
+          const leftDiff = Math.abs(newLeft - savedLeft);
+          const topDiff = Math.abs(newTop - savedTop);
+          const scaleDiff = Math.abs(clampedScale - avgScale);
+          
+          // Solo aplicar si hay cambio significativo (mayor a 0.001px o 0.0001 de escala)
+          // Umbral muy pequeño para evitar movimiento mínimo pero permitir correcciones necesarias
+          if (leftDiff < 0.001 && topDiff < 0.001 && scaleDiff < 0.0001) {
+            // No hay cambio significativo, salir sin hacer nada
+            this.isCorrectingQrPosition = false;
+            return;
+          }
+          
+          // CRÍTICO: Aplicar escalas y posición manteniendo el centro fijo
+          requestAnimationFrame(() => {
+            if (obj && this.fabricCanvasInstance) {
+              obj.set({
+                scaleX: clampedScale,
+                scaleY: clampedScale,
+                left: newLeft,  // Posición calculada desde el centro guardado
+                top: newTop     // Posición calculada desde el centro guardado
+              });
+              
+              // Actualizar coordenadas después de aplicar cambios
+              obj.setCoords();
+              
+              // Forzar renderizado
+              this.fabricCanvasInstance.renderAll();
+              
+              // Desactivar bandera después de aplicar cambios
+              this.isCorrectingQrPosition = false;
+            }
+          });
+        }
+      });
+      
+      // Listener después de modificar - Corregir cualquier desproporción
+      // IMPORTANTE: Con origin en 'center', left/top ya representan el centro
+      img.on('modified', () => {
+        // Prevenir correcciones múltiples simultáneas
+        if (this.isCorrectingQrPosition) {
+          return;
+        }
+        
+        const obj = this.qrObject;
+        if (obj) {
+          const originalQrWidth = obj.width || 300;
+          const originalQrHeight = obj.height || 300;
+          const scaleX = obj.scaleX || 1;
+          const scaleY = obj.scaleY || 1;
+          
+          // Si hay diferencia, corregir usando promedio SIN mover el centro
+          if (Math.abs(scaleX - scaleY) > 0.001) {
+            // Activar bandera para prevenir correcciones múltiples
+            this.isCorrectingQrPosition = true;
+            
+            // CRÍTICO: Guardar posición actual EXACTA antes de modificar
+            const savedLeft = obj.left || 0;
+            const savedTop = obj.top || 0;
+            
+            // Calcular centro usando coordenadas directas del objeto
+            const currentWidth = originalQrWidth * scaleX;
+            const currentHeight = originalQrHeight * scaleY;
+            const savedCenterX = savedLeft + currentWidth / 2;
+            const savedCenterY = savedTop + currentHeight / 2;
+            
+            const uniformScale = (scaleX + scaleY) / 2;
+            const minScale = 50 / originalQrWidth;
+            const maxScale = 300 / originalQrWidth;
+            const clampedScale = Math.max(minScale, Math.min(maxScale, uniformScale));
+            
+            // Calcular nuevas dimensiones
+            const newWidth = originalQrWidth * clampedScale;
+            const newHeight = originalQrHeight * clampedScale;
+            
+            // CRÍTICO: Calcular nueva posición left/top basándose en el centro guardado
+            const newLeft = savedCenterX - newWidth / 2;
+            const newTop = savedCenterY - newHeight / 2;
+            
+            // CRÍTICO: Verificar si hay cambio significativo antes de aplicar
+            // Si el cambio es menor a 0.001px, no aplicar para evitar movimiento mínimo
+            const leftDiff = Math.abs(newLeft - savedLeft);
+            const topDiff = Math.abs(newTop - savedTop);
+            const scaleDiff = Math.abs(clampedScale - uniformScale);
+            
+            // Solo aplicar si hay cambio significativo (mayor a 0.001px o 0.0001 de escala)
+            // Umbral muy pequeño para evitar movimiento mínimo pero permitir correcciones necesarias
+            if (leftDiff < 0.001 && topDiff < 0.001 && scaleDiff < 0.0001) {
+              // No hay cambio significativo, salir sin hacer nada
+              this.isCorrectingQrPosition = false;
+              return;
+            }
+            
+            // CRÍTICO: Usar requestAnimationFrame para aplicar en el siguiente frame
+            requestAnimationFrame(() => {
+              if (obj && this.fabricCanvasInstance) {
+                obj.set({
+                  scaleX: clampedScale,
+                  scaleY: clampedScale,
+                  left: newLeft,  // Posición calculada desde el centro guardado
+                  top: newTop     // Posición calculada desde el centro guardado
+                });
+                
+                // Actualizar coordenadas después de aplicar cambios
+                obj.setCoords();
+                
+                this.fabricCanvasInstance.renderAll();
+                
+                // Desactivar bandera después de aplicar cambios
+                this.isCorrectingQrPosition = false;
+              }
+            });
+          }
+        }
       });
       
       // IMPORTANTE: NO llamar a constrainQrToCanvas() aquí
@@ -597,22 +887,23 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.fabricCanvasInstance.renderAll();
 
-    } catch (error: any) {
-      console.error('Error al cargar QR en Fabric.js:', error);
+      } catch (error: any) {
+        if (!environment.production) {
+          console.error('Error al cargar QR en Fabric.js:', error);
+        }
       throw error;
     }
   }
 
   /**
    * Restringir QR dentro de los límites del canvas
+   * IMPORTANTE: Solo restringe si el usuario está moviendo el QR intencionalmente
    */
   private constrainQrToCanvas(e: any): void {
     if (!this.qrObject || !this.fabricCanvasInstance) return;
 
     const obj = e.target as FabricImage;
-    if (!obj) return;
-
-    const canvas = this.fabricCanvasInstance;
+    if (!obj || obj !== this.qrObject) return; // Solo procesar si es el QR
 
     // Calcular dimensiones reales del QR usando getBoundingRect()
     // Esto es más preciso que multiplicar width * scaleX manualmente
@@ -642,39 +933,45 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     const maxX = pdfOffsetX + pdfScaledWidth - qrWidth - safeMarginScaled;
     const maxY = pdfOffsetY + pdfScaledHeight - qrHeight - safeMarginYScaled;
 
-    // Aplicar restricciones
-    let needsUpdate = false;
-    let newLeft = obj.left || 0;
-    let newTop = obj.top || 0;
+    // Obtener posición actual del objeto
+    const currentLeft = obj.left || 0;
+    const currentTop = obj.top || 0;
 
-    if (newLeft < minX) {
+    // Solo aplicar restricciones si está fuera de los límites
+    // No modificar si está dentro (evita movimiento no deseado)
+    let needsUpdate = false;
+    let newLeft = currentLeft;
+    let newTop = currentTop;
+
+    if (currentLeft < minX) {
       newLeft = minX;
       needsUpdate = true;
-    }
-    if (newLeft > maxX) {
+    } else if (currentLeft > maxX) {
       newLeft = maxX;
       needsUpdate = true;
     }
-    if (newTop < minY) {
+
+    if (currentTop < minY) {
       newTop = minY;
       needsUpdate = true;
-    }
-    if (newTop > maxY) {
+    } else if (currentTop > maxY) {
       newTop = maxY;
       needsUpdate = true;
     }
 
+    // Solo actualizar si realmente necesita corrección (está fuera de límites)
     if (needsUpdate) {
       obj.set({
         left: newLeft,
         top: newTop
       });
+      obj.setCoords(); // Actualizar coordenadas de controles
       this.fabricCanvasInstance.renderAll();
     }
   }
 
   /**
-   * Restringir tamaño del QR
+   * Restringir tamaño del QR - MEJORADO para evitar que se rompa
    */
   private constrainQrSize(e: any): void {
     if (!this.qrObject) return;
@@ -682,24 +979,118 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     const obj = e.target as FabricImage;
     if (!obj) return;
 
-    const currentWidth = obj.width! * obj.scaleX!;
-    const currentHeight = obj.height! * obj.scaleY!;
+    const originalQrWidth = obj.width || 300;
+    const originalQrHeight = obj.height || 300;
+    
+    // Obtener escalas actuales
+    let scaleX = obj.scaleX || 1;
+    let scaleY = obj.scaleY || 1;
+    
+    // Usar promedio para mantener relación de aspecto
+    const avgScale = (scaleX + scaleY) / 2;
+    
+    // Calcular dimensiones con escala uniforme
+    const currentWidth = originalQrWidth * avgScale;
+    const currentHeight = originalQrHeight * avgScale;
 
-    // Validar tamaño mínimo y máximo
-    if (currentWidth < 50 || currentHeight < 50) {
-      const minScale = 50 / Math.max(obj.width!, obj.height!);
-      obj.set({
-        scaleX: Math.max(minScale, obj.scaleX!),
-        scaleY: Math.max(minScale, obj.scaleY!)
-      });
+    // Límites estrictos para evitar que se rompa
+    const minSize = 50; // Tamaño mínimo absoluto
+    const maxSize = 300; // Tamaño máximo absoluto
+    
+    let finalScale = avgScale;
+    
+    // Validar tamaño mínimo - PREVENIR que se rompa
+    if (currentWidth < minSize || currentHeight < minSize) {
+      finalScale = minSize / originalQrWidth;
+      // Solo loggear si no se ha loggeado recientemente (evitar spam)
+      const now = Date.now();
+      if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+        this.lastSizeWarningTime = now;
+        // Log silencioso (solo en desarrollo)
+        // console.log('QR muy pequeño, aplicando tamaño mínimo');
+      }
     }
 
-    if (currentWidth > 300 || currentHeight > 300) {
-      const maxScale = 300 / Math.max(obj.width!, obj.height!);
+    // Validar tamaño máximo
+    if (currentWidth > maxSize || currentHeight > maxSize) {
+      finalScale = maxSize / originalQrWidth;
+      // Solo loggear si no se ha loggeado recientemente (evitar spam)
+      const now = Date.now();
+      if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+        this.lastSizeWarningTime = now;
+        // Log silencioso (solo en desarrollo)
+        // console.log('QR muy grande, aplicando tamaño máximo');
+      }
+    }
+    
+    // CRÍTICO: Si la escala no cambió significativamente, no hacer nada
+    // Esto previene correcciones innecesarias cuando el QR está en el límite
+    if (Math.abs(finalScale - avgScale) < 0.001) {
+      return; // No hay cambio significativo, salir sin hacer nada
+    }
+    
+    // Prevenir correcciones múltiples simultáneas
+    if (this.isCorrectingQrPosition) {
+      return;
+    }
+    
+    // Activar bandera para prevenir correcciones múltiples
+    this.isCorrectingQrPosition = true;
+    
+    // CRÍTICO: Guardar posición actual EXACTA antes de modificar
+    const savedLeft = obj.left || 0;
+    const savedTop = obj.top || 0;
+    
+    // Calcular centro usando posición guardada
+    const savedCenterX = savedLeft + currentWidth / 2;
+    const savedCenterY = savedTop + currentHeight / 2;
+    
+    // Calcular nuevas dimensiones
+    const newWidth = originalQrWidth * finalScale;
+    const newHeight = originalQrHeight * finalScale;
+    
+    // CRÍTICO: Calcular nueva posición left/top basándose en el centro guardado
+    const finalNewLeft = savedCenterX - newWidth / 2;
+    const finalNewTop = savedCenterY - newHeight / 2;
+    
+    // CRÍTICO: Verificar si hay cambio significativo antes de aplicar
+    // Si el cambio es menor a 0.001px, no aplicar para evitar movimiento mínimo
+    const leftDiff = Math.abs(finalNewLeft - savedLeft);
+    const topDiff = Math.abs(finalNewTop - savedTop);
+    const scaleDiff = Math.abs(finalScale - avgScale);
+    
+    // Solo aplicar si hay cambio significativo (mayor a 0.001px o 0.0001 de escala)
+    // Umbral muy pequeño para evitar movimiento mínimo pero permitir correcciones necesarias
+    if (leftDiff < 0.001 && topDiff < 0.001 && scaleDiff < 0.0001 && Math.abs(scaleX - scaleY) < 0.0001) {
+      // No hay cambio significativo, salir sin hacer nada
+      this.isCorrectingQrPosition = false;
+      return;
+    }
+    
+    // Aplicar escala uniforme (garantiza cuadrado y evita rotura) SIN mover el centro
+    if (Math.abs(finalScale - avgScale) > 0.001 || Math.abs(scaleX - scaleY) > 0.001) {
+      // CRÍTICO: Usar requestAnimationFrame para aplicar en el siguiente frame
+      requestAnimationFrame(() => {
+        if (obj && this.fabricCanvasInstance) {
       obj.set({
-        scaleX: Math.min(maxScale, obj.scaleX!),
-        scaleY: Math.min(maxScale, obj.scaleY!)
+            scaleX: finalScale,
+            scaleY: finalScale,
+            left: finalNewLeft,  // Posición calculada desde el centro guardado
+            top: finalNewTop     // Posición calculada desde el centro guardado
+          });
+          
+          // Actualizar coordenadas después de aplicar cambios
+          obj.setCoords();
+          
+          this.fabricCanvasInstance.renderAll();
+          
+          // Desactivar bandera después de aplicar cambios
+          this.isCorrectingQrPosition = false;
+        }
       });
+    } else {
+      // Si no hay cambios necesarios, solo desactivar la bandera
+      this.isCorrectingQrPosition = false;
     }
   }
 
@@ -726,72 +1117,137 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       // Obtener coordenadas exactas del objeto Fabric.js
       const obj = this.qrObject;
       
-      // IMPORTANTE: Usar las coordenadas DIRECTAS del objeto (left, top)
-      // NO usar getBoundingRect() para la posición, solo para dimensiones
-      // getBoundingRect() puede incluir offsets que no queremos
-      let left = obj.left || 0;
-      let top = obj.top || 0;
+      // CRÍTICO: Calcular coordenadas relativas al objeto PDF, no al canvas completo
+      // Esto asegura que la posición sea exacta independientemente de cómo esté centrado el PDF
+      const qrLeft = obj.left || 0;
+      const qrTop = obj.top || 0;
       
-      const boundingRect = obj.getBoundingRect();
-      const width = boundingRect.width;
-      const height = boundingRect.height;
-
-      // Validar que el QR esté completamente dentro del canvas antes de guardar
-      const canvasWidth = this.fabricCanvasInstance.width!;
-      const canvasHeight = this.fabricCanvasInstance.height!;
-
-      // IMPORTANTE: Convertir coordenadas del espacio del canvas (595x842) al espacio REAL del PDF
-      // El PDF puede ser más pequeño que A4 y está centrado con offsets
-      // Necesitamos convertir las coordenadas del QR al espacio real del PDF
+      // LÓGICA ADAPTADA DE LA RAMA MAIN: Convertir coordenadas del canvas al PDF real, luego al estándar
+      // El objeto PDF en Fabric.js está en (0,0) con tamaño 595x842 (estándar)
+      // Pero el PDF REAL puede ser más pequeño y estar centrado visualmente con offsets
+      // Necesitamos convertir: Canvas -> PDF Real -> Espacio Estándar
       
-      // Obtener dimensiones reales del PDF (sin escalar)
+      // Obtener dimensiones reales del PDF y offsets de centrado
       const pdfRealWidth = this.pdfDimensions.originalWidth || this.STANDARD_PDF_WIDTH;
       const pdfRealHeight = this.pdfDimensions.originalHeight || this.STANDARD_PDF_HEIGHT;
       const pdfScale = this.pdfDimensions.scale || 1.0;
       const pdfOffsetX = this.pdfDimensions.offsetX || 0;
       const pdfOffsetY = this.pdfDimensions.offsetY || 0;
       
-      // Calcular dimensiones escaladas del PDF en el canvas
-      const pdfScaledWidth = pdfRealWidth * pdfScale;
-      const pdfScaledHeight = pdfRealHeight * pdfScale;
+      // El objeto PDF siempre está en (0,0) en Fabric.js
+      const pdfObjectLeft = this.pdfObject?.left || 0;
+      const pdfObjectTop = this.pdfObject?.top || 0;
       
-      // Convertir coordenadas del QR del espacio del canvas al espacio real del PDF
-      // 1. Restar el offset (el PDF está centrado)
-      let qrXInCanvas = left - pdfOffsetX;
-      let qrYInCanvas = top - pdfOffsetY;
+      // 1. Calcular coordenadas relativas al objeto PDF estándar (595x842) en el canvas
+      let leftRelativeToStandard = qrLeft - pdfObjectLeft;
+      let topRelativeToStandard = qrTop - pdfObjectTop;
       
-      // 2. Convertir del espacio escalado al espacio real del PDF
-      let qrXInRealPdf = (qrXInCanvas / pdfScale);
-      let qrYInRealPdf = (qrYInCanvas / pdfScale);
-      let qrWidthInRealPdf = width / pdfScale;
-      let qrHeightInRealPdf = height / pdfScale;
+      // 2. Ajustar por el offset visual del PDF centrado
+      // Si el PDF está centrado, el QR visual está relativo al PDF centrado, no al objeto completo
+      // CRÍTICO: El offset se aplica en el espacio del canvas (595x842), pero el PDF real está centrado
+      // Necesitamos ajustar las coordenadas para que sean relativas al PDF visual centrado
+      let leftInCanvas = leftRelativeToStandard - pdfOffsetX;
+      let topInCanvas = topRelativeToStandard - pdfOffsetY;
       
-      // 3. Validar que el QR esté dentro del área real del PDF
-      if (qrXInCanvas < 0 || qrYInCanvas < 0 || 
-          qrXInCanvas + width > pdfScaledWidth || 
-          qrYInCanvas + height > pdfScaledHeight) {
-        this.notificationService.showError('El QR está fuera del área del documento. Ajusta la posición manualmente.');
+      // Validar que las coordenadas ajustadas no sean negativas (fuera del PDF visual)
+      // Si son negativas, significa que el QR está fuera del área visible del PDF
+      if (leftInCanvas < 0 || topInCanvas < 0) {
+        // Si el QR está fuera del área visible, usar coordenadas relativas al objeto estándar
+        // Esto puede pasar si el PDF está muy centrado y el QR está cerca del borde
+        leftInCanvas = leftRelativeToStandard;
+        topInCanvas = topRelativeToStandard;
+      }
+      
+      // 3. Convertir del espacio escalado del canvas al espacio REAL del PDF
+      // El PDF en el canvas está escalado, necesitamos desescalarlo
+      // CRÍTICO: Usar precisión máxima para evitar errores de redondeo
+      let qrXInRealPdf = leftInCanvas / pdfScale;
+      let qrYInRealPdf = topInCanvas / pdfScale;
+      
+      // Calcular dimensiones
+      const originalQrWidth = obj.width || 300;
+      const originalQrHeight = obj.height || 300;
+      const scaleX = obj.scaleX || 1;
+      const scaleY = obj.scaleY || 1;
+      const uniformScale = (scaleX + scaleY) / 2;
+      
+      // Calcular dimensiones usando escala uniforme (garantiza cuadrado)
+      const finalWidth = originalQrWidth * uniformScale;
+      const finalHeight = originalQrHeight * uniformScale;
+      
+      // Log para debugging solo en desarrollo
+      if (!environment.production && Math.abs(scaleX - scaleY) > 0.01) {
+        console.log('Corrigiendo escala del QR para mantener relación de aspecto al guardar:', {
+          scaleX,
+          scaleY,
+          uniformScale,
+          dimensiones: { width: finalWidth, height: finalHeight }
+        });
+      }
+      
+      const boundingRect = obj.getBoundingRect();
+
+      // Validar que el QR esté completamente dentro del canvas antes de guardar
+      const canvasWidth = this.fabricCanvasInstance.width!;
+      const canvasHeight = this.fabricCanvasInstance.height!;
+
+      // 4. Convertir dimensiones del canvas al espacio real del PDF
+      let qrWidthInRealPdf = finalWidth / pdfScale;
+      let qrHeightInRealPdf = finalHeight / pdfScale;
+      
+      // 5. Validar que el QR esté dentro del área real del PDF
+      const tolerance = 1; // 1px de tolerancia
+      if (qrXInRealPdf < -tolerance || qrYInRealPdf < -tolerance || 
+          qrXInRealPdf + qrWidthInRealPdf > pdfRealWidth + tolerance || 
+          qrYInRealPdf + qrHeightInRealPdf > pdfRealHeight + tolerance) {
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          this.notificationService.showError('El QR está fuera del área del documento. Ajusta la posición manualmente.');
+        }
         this.saving = false;
         return;
       }
       
-      // 4. Convertir al espacio estándar (595x842) para enviar al backend
+      // 6. Convertir al espacio estándar (595x842) para enviar al backend
       // El backend espera coordenadas en el espacio estándar y las convertirá al tamaño real
       const standardX = (qrXInRealPdf / pdfRealWidth) * this.STANDARD_PDF_WIDTH;
       const standardY = (qrYInRealPdf / pdfRealHeight) * this.STANDARD_PDF_HEIGHT;
       const standardWidth = (qrWidthInRealPdf / pdfRealWidth) * this.STANDARD_PDF_WIDTH;
       const standardHeight = (qrHeightInRealPdf / pdfRealHeight) * this.STANDARD_PDF_HEIGHT;
       
+      // CRÍTICO: Forzar que width y height sean iguales usando width como referencia
+      // Esto previene que se guarde 125x137 en lugar de 125x125
+      // Usar width como referencia para mantener el tamaño visual original
+      const finalStandardWidth = Math.round(standardWidth * 100) / 100;
+      const finalStandardHeight = Math.round(standardWidth * 100) / 100; // Usar width, no promedio
+      
+      // Log solo en desarrollo
+      if (!environment.production && Math.abs(standardWidth - standardHeight) > 0.01) {
+        console.log('Corrigiendo dimensiones antes de guardar para mantener cuadrado:', {
+          original: { width: standardWidth, height: standardHeight },
+          corregido: { width: finalStandardWidth, height: finalStandardHeight },
+          nota: 'Usando width como referencia para mantener tamaño visual'
+        });
+      }
+      
       const position = {
         x: Math.round(standardX * 100) / 100, // Redondear a 2 decimales
         y: Math.round(standardY * 100) / 100,
-        width: Math.round(standardWidth * 100) / 100,
-        height: Math.round(standardHeight * 100) / 100
+        width: finalStandardWidth,  // SIEMPRE igual a height
+        height: finalStandardHeight // SIEMPRE igual a width
       };
 
-      // Validar tamaño
-      if (position.width < 50 || position.width > 300 || position.height < 50 || position.height > 300) {
+      // Validar tamaño (con tolerancia para evitar falsos positivos)
+      const sizeTolerance = 0.5; // 0.5px de tolerancia
+      if (position.width < 50 - sizeTolerance || position.width > 300 + sizeTolerance || 
+          position.height < 50 - sizeTolerance || position.height > 300 + sizeTolerance) {
+        // Solo mostrar error si no se ha mostrado recientemente
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
         this.notificationService.showError('El tamaño del QR debe estar entre 50px y 300px');
+        }
         this.saving = false;
         return;
       }
@@ -802,13 +1258,21 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const safeMarginYInRealPdf = (this.SAFE_MARGIN / this.STANDARD_PDF_HEIGHT) * pdfRealHeight;
       
       // Validar en el espacio real del PDF
-      if (qrXInRealPdf < safeMarginInRealPdf || qrYInRealPdf < safeMarginYInRealPdf || 
-          qrXInRealPdf + qrWidthInRealPdf > pdfRealWidth - safeMarginInRealPdf || 
-          qrYInRealPdf + qrHeightInRealPdf > pdfRealHeight - safeMarginYInRealPdf) {
+             // Validar con tolerancia para evitar falsos positivos
+             const marginTolerance = 0.5; // 0.5px de tolerancia
+             if (qrXInRealPdf < safeMarginInRealPdf - marginTolerance || 
+                 qrYInRealPdf < safeMarginYInRealPdf - marginTolerance || 
+                 qrXInRealPdf + qrWidthInRealPdf > pdfRealWidth - safeMarginInRealPdf + marginTolerance || 
+                 qrYInRealPdf + qrHeightInRealPdf > pdfRealHeight - safeMarginYInRealPdf + marginTolerance) {
+               // Solo mostrar error si no se ha mostrado recientemente
+               const now = Date.now();
+               if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+                 this.lastSizeWarningTime = now;
         if (this.SAFE_MARGIN > 0) {
           this.notificationService.showError(`El QR debe estar dentro del área segura (margen de ${this.SAFE_MARGIN}px desde los bordes). Ajusta la posición.`);
         } else {
           this.notificationService.showError('El QR está fuera del área del documento. Ajusta la posición.');
+                 }
         }
         this.saving = false;
         return;
@@ -819,7 +1283,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.savePositionBackend(position);
 
     } catch (error: any) {
-      console.error('Error al guardar posición:', error);
+      if (!environment.production) {
+        console.error('Error al guardar posición:', error);
+      }
       this.notificationService.showError('Error al guardar la posición');
       this.saving = false;
     }
@@ -896,10 +1362,16 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       if (pdfX < minX || pdfY < minY || 
           pdfX + pdfWidth > maxX || 
           pdfY + pdfHeight > maxY) {
-        console.error('QR fuera del área segura en embedQrWithPdfLib:', {
-          pdfX, pdfY, pdfWidth, pdfHeight,
-          minX, minY, maxX, maxY
-        });
+        // Solo loggear si no se ha loggeado recientemente (evitar spam)
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          // Log silencioso (solo en desarrollo)
+          // console.error('QR fuera del área segura en embedQrWithPdfLib:', {
+          //   pdfX, pdfY, pdfWidth, pdfHeight,
+          //   minX, minY, maxX, maxY
+          // });
+        }
         throw new Error('El QR está fuera del área segura. Ajusta la posición en el editor.');
       }
       
@@ -921,8 +1393,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         pdfY + pdfHeight <= finalMaxY;
 
       if (!isWithinBounds) {
-        console.error('QR fuera de límites del PDF');
+        // Solo mostrar error si no se ha mostrado recientemente
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          // console.error('QR fuera de límites del PDF'); // Log silencioso
         this.notificationService.showError('El QR está fuera de los límites del documento. Por favor, ajusta la posición.');
+        }
         this.saving = false;
         return;
       }
@@ -953,14 +1430,25 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const pageCountAfterDraw = newPdfDoc.getPageCount();
       
       if (pageCountAfterDraw > 1) {
-        console.error('Error: pdf-lib creó páginas adicionales');
+        // Solo loggear si no se ha loggeado recientemente (evitar spam)
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          // console.error('Error: pdf-lib creó páginas adicionales'); // Log silencioso
+        }
+        
         while (newPdfDoc.getPageCount() > 1) {
           newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
         }
         
         if (newPdfDoc.getPageCount() > 1) {
-          console.error('Error: No se pudieron eliminar todas las páginas adicionales');
+          // Solo mostrar error si no se ha mostrado recientemente
+          const now2 = Date.now();
+          if (now2 - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+            this.lastSizeWarningTime = now2;
+            // console.error('Error: No se pudieron eliminar todas las páginas adicionales'); // Log silencioso
           this.notificationService.showError('Error al procesar el PDF. Por favor, intenta ajustar la posición del QR.');
+          }
           this.saving = false;
           return;
         }
@@ -968,7 +1456,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       const pageCountBeforeSave = newPdfDoc.getPageCount();
       if (pageCountBeforeSave !== 1) {
-        console.error('Error: El PDF tiene más de 1 página antes de guardar');
+        // Solo loggear si no se ha loggeado recientemente (evitar spam)
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          // console.error('Error: El PDF tiene más de 1 página antes de guardar'); // Log silencioso
+        }
         while (newPdfDoc.getPageCount() > 1) {
           newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
         }
@@ -980,8 +1473,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const finalPageCount = verifyPdfDoc.getPageCount();
       
       if (finalPageCount > 1) {
-        console.error('Error: El PDF guardado tiene', finalPageCount, 'páginas');
+        // Solo mostrar error si no se ha mostrado recientemente
+        const now = Date.now();
+        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
+          this.lastSizeWarningTime = now;
+          // console.error('Error: El PDF guardado tiene', finalPageCount, 'páginas'); // Log silencioso
         this.notificationService.showError(`Error: El PDF generado tiene ${finalPageCount} páginas. Por favor, ajusta la posición del QR más arriba.`);
+        }
         this.saving = false;
         return;
       }
@@ -1019,7 +1517,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       });
 
     } catch (error: any) {
-      console.error('Error al procesar PDF con pdf-lib:', error);
+      if (!environment.production) {
+        console.error('Error al procesar PDF con pdf-lib:', error);
+      }
       this.notificationService.showError('Error al procesar PDF. Usando método del backend...');
       this.savePositionBackend(position);
     }
@@ -1034,19 +1534,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     this.docqrService.embedQr(this.qrId, position).subscribe({
       next: (response) => {
         if (response.success) {
-          this.notificationService.showSuccess('QR embebido exitosamente');
+          // CRÍTICO: NO actualizar la posición del QR en el canvas después de guardar
+          // El objeto QR ya está en la posición correcta visualmente
+          // Actualizar con position.x/y causaría movimiento porque esas coordenadas son del espacio estándar (595x842)
+          // no del espacio del canvas actual
           
-          if (this.qrObject) {
-            this.qrObject.set({
-              left: position.x,
-              top: position.y,
-              scaleX: position.width / (this.qrObject.width || 100),
-              scaleY: position.height / (this.qrObject.height || 100)
-            });
-            
-            this.fabricCanvasInstance?.renderAll();
-          }
-          
+          // Actualizar el estado del documento en memoria
           if (this.document) {
             this.document.qr_position = {
               x: position.x,
@@ -1060,8 +1553,23 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
             }
           }
           
-          // NO recargar el documento completo para evitar restaurar posición anterior
-          // this.loadDocument(); // Comentado para evitar recargar y restaurar posición
+          // ACTUALIZACIÓN INSTANTÁNEA: Actualizar URLs con nuevos timestamps para evitar caché
+          // Esto permite que cuando el usuario descargue o vea el PDF, vea la versión actualizada
+          // sin necesidad de refrescar la página
+          if (this.document?.final_pdf_url) {
+            // Actualizar URL del PDF final con cache buster
+            // NOTA: No recargamos el PDF en el canvas porque mostraría el QR duplicado
+            // (el QR ya está embebido en el PDF final, y también tenemos el objeto interactivo)
+            // Solo actualizamos la URL para que cuando se descargue, sea la versión actualizada
+            this.document.final_pdf_url = response.data?.final_pdf_url || this.document.final_pdf_url;
+          }
+          
+          // Actualizar URL del QR con cache buster para forzar recarga si se muestra en otro lugar
+          if (this.document?.qr_image_url) {
+            const baseQrUrl = this.convertToRelativeIfHttps(this.document.qr_image_url);
+            const separator = baseQrUrl.includes('?') ? '&' : '?';
+            this.qrImageUrl = `${baseQrUrl}${separator}t=${Date.now()}`;
+          }
           
           this.saving = false;
           
@@ -1075,14 +1583,16 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       },
       error: (error: any) => {
-        console.error('Error al embebir QR en el backend:', error);
-        console.error('Detalles del error:', {
-          status: error?.status,
-          statusText: error?.statusText,
-          message: error?.message,
-          error_message: error?.error?.message,
-          error_data: error?.error
-        });
+        if (!environment.production) {
+          console.error('Error al embebir QR en el backend:', error);
+          console.error('Detalles del error:', {
+            status: error?.status,
+            statusText: error?.statusText,
+            message: error?.message,
+            error_message: error?.error?.message,
+            error_data: error?.error
+          });
+        }
         
         const errorMessage = (error?.error?.message || error?.message || '').toLowerCase();
         const errorType = error?.error?.error_type || '';
@@ -1099,7 +1609,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         if (is500Error || isFpdiError) {
           this.notificationService.showInfo('El PDF requiere procesamiento especial, usando método alternativo...');
           this.embedQrWithPdfLib(position).catch((fallbackError) => {
-            console.error('Error también en método alternativo:', fallbackError);
+            if (!environment.production) {
+              console.error('Error también en método alternativo:', fallbackError);
+            }
             this.notificationService.showError('Error al procesar el PDF. Por favor, intenta con otro archivo.');
             this.saving = false;
           });
@@ -1231,7 +1743,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       },
       error: (error) => {
-        console.error('Error al regenerar QR:', error);
+        if (!environment.production) {
+          console.error('Error al regenerar QR:', error);
+        }
         this.notificationService.showError('Error al regenerar QR code: ' + (error?.error?.message || error?.message || 'Error desconocido'));
       }
     });
@@ -1263,7 +1777,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         this.notificationService.showSuccess('✅ QR descargado exitosamente');
       })
       .catch(error => {
-        console.error('Error al descargar QR:', error);
+        if (!environment.production) {
+          console.error('Error al descargar QR:', error);
+        }
         this.notificationService.showError('Error al descargar el QR');
       });
   }
@@ -1302,7 +1818,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         this.notificationService.showSuccess('✅ PDF con QR descargado exitosamente');
       })
       .catch(error => {
-        console.error('Error al descargar PDF:', error);
+        if (!environment.production) {
+          console.error('Error al descargar PDF:', error);
+        }
         this.notificationService.showError('Error al descargar el PDF');
       });
   }

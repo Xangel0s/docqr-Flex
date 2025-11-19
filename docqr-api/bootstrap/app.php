@@ -17,15 +17,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // Se registra primero para que procese los headers antes que otros middlewares
         $middleware->web(prepend: [
             \App\Http\Middleware\TrustProxies::class,
+            \App\Http\Middleware\SecurityHeaders::class, // Headers de seguridad
         ]);
         $middleware->api(prepend: [
             \App\Http\Middleware\TrustProxies::class,
             \App\Http\Middleware\HandleCorsOptions::class, // Manejar OPTIONS antes que HandleCors
             \Illuminate\Http\Middleware\HandleCors::class,
+            \App\Http\Middleware\SecurityHeaders::class, // Headers de seguridad
         ]);
         
         // Deshabilitar FrameGuard completamente para permitir iframes
-        // En producción, se maneja manualmente en FileController
+        // En producción, se maneja manualmente en SecurityHeaders middleware
         $middleware->web(remove: [
             \Illuminate\Http\Middleware\FrameGuard::class,
         ]);
@@ -34,6 +36,27 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // CRÍTICO: Para rutas API, siempre devolver JSON en lugar de HTML
+        // Esto previene que los errores 404/500 devuelvan páginas HTML cuando se espera PDF/JSON
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Recurso no encontrado',
+                    'path' => $request->path()
+                ], 404)->header('Content-Type', 'application/json');
+            }
+        });
+        
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\HttpException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || str_starts_with($request->path(), 'api/')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage() ?: 'Error en el servidor',
+                    'status' => $e->getStatusCode(),
+                    'path' => $request->path()
+                ], $e->getStatusCode())->header('Content-Type', 'application/json');
+            }
+        });
     })->create();
 

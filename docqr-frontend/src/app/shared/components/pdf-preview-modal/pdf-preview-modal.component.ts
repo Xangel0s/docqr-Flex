@@ -71,6 +71,13 @@ export class PdfPreviewModalComponent implements OnInit, OnDestroy, OnChanges {
    */
   private updateSafeUrl(): void {
     if (this.pdfUrl) {
+      // Validar que la URL no sea vacía y que sea válida
+      if (!this.pdfUrl.trim() || this.pdfUrl === '/' || this.pdfUrl === 'undefined' || this.pdfUrl === 'null') {
+        console.error('URL de PDF inválida:', this.pdfUrl);
+        this.safePdfUrl = null;
+        return;
+      }
+      
       const urlWithParams = this.getPdfUrlWithParams();
       this.safePdfUrl = this.sanitizer.bypassSecurityTrustResourceUrl(urlWithParams);
     } else {
@@ -240,9 +247,23 @@ export class PdfPreviewModalComponent implements OnInit, OnDestroy, OnChanges {
     if (!this.pdfUrl) {
       return '';
     }
-    // Agregar parámetros de página y zoom (pueden no funcionar en todos los navegadores)
-    const separator = this.pdfUrl.includes('?') ? '&' : '#';
-    return `${this.pdfUrl}${separator}page=${this.currentPage}&zoom=${this.zoomLevel}`;
+    
+    // Limpiar la URL: remover fragmentos (#) y parámetros de zoom/página existentes
+    let cleanUrl = this.pdfUrl.split('#')[0]; // Remover fragmento si existe
+    
+    // Para PDFs, no agregar parámetros de página/zoom en la URL
+    // Los navegadores manejan PDFs directamente sin estos parámetros
+    // Si se necesita zoom, se puede hacer con CSS transform en el iframe
+    return cleanUrl;
+  }
+
+  /**
+   * Manejar error del iframe
+   */
+  onIframeError(): void {
+    console.error('Error al cargar PDF en iframe:', this.pdfUrl);
+    // No cerrar el modal automáticamente, solo mostrar el mensaje de error
+    this.safePdfUrl = null;
   }
 }
 

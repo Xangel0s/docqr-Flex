@@ -243,20 +243,55 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
   /**
    * Ver documento (abrir modal de vista previa)
+   * Obtiene datos frescos del backend antes de abrir el modal para evitar mostrar datos viejos
    */
-  viewDocument(document: Document): void {
-    // Priorizar PDF final con QR, luego PDF original
-    if (document.final_pdf_url) {
-      this.previewPdfUrl = document.final_pdf_url;
-      this.previewDocumentName = document.original_filename;
-      this.previewModalOpen = true;
-    } else if (document.pdf_url) {
-      this.previewPdfUrl = document.pdf_url;
-      this.previewDocumentName = document.original_filename;
-      this.previewModalOpen = true;
-    } else {
-      this.notificationService.showWarning('El documento aún no tiene PDF disponible');
+  viewDocument(document: Document, event?: Event): void {
+    // Prevenir comportamiento por defecto y propagación
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
+    
+    // Obtener datos frescos del backend antes de abrir el modal
+    this.docqrService.getDocumentByQrId(document.qr_id).subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          const freshDocument = response.data;
+          
+          // Priorizar PDF final con QR, luego PDF original
+          if (freshDocument.final_pdf_url) {
+            // Agregar cache buster para evitar problemas de caché
+            const separator = freshDocument.final_pdf_url.includes('?') ? '&' : '?';
+            this.previewPdfUrl = `${freshDocument.final_pdf_url}${separator}t=${Date.now()}`;
+            this.previewDocumentName = freshDocument.original_filename || 'Documento';
+            this.previewModalOpen = true;
+          } else if (freshDocument.pdf_url) {
+            // Agregar cache buster para evitar problemas de caché
+            const separator = freshDocument.pdf_url.includes('?') ? '&' : '?';
+            this.previewPdfUrl = `${freshDocument.pdf_url}${separator}t=${Date.now()}`;
+            this.previewDocumentName = freshDocument.original_filename || 'Documento';
+            this.previewModalOpen = true;
+          } else {
+            this.notificationService.showWarning('El documento aún no tiene PDF disponible');
+          }
+        } else {
+          this.notificationService.showError('No se pudo cargar la información del documento');
+        }
+      },
+      error: (error) => {
+        console.error('Error al obtener documento:', error);
+        // Fallback: usar datos del documento en caché si hay error
+        if (document.final_pdf_url || document.pdf_url) {
+          const pdfUrl = document.final_pdf_url || document.pdf_url;
+          const separator = pdfUrl.includes('?') ? '&' : '?';
+          this.previewPdfUrl = `${pdfUrl}${separator}t=${Date.now()}`;
+          this.previewDocumentName = document.original_filename || 'Documento';
+          this.previewModalOpen = true;
+        } else {
+          this.notificationService.showError('Error al cargar el documento');
+        }
+      }
+    });
   }
 
   /**
@@ -301,8 +336,17 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     this.editOptionModalOpen = false;
     
     if (editType === 'qr_position') {
-      // Abrir editor de posición del QR
-      this.router.navigate(['/editor', documentToEdit.qr_id]);
+      // Detectar si el documento fue creado con el método "Adjuntar"
+      // Si no tiene final_pdf_url, significa que es un documento adjunto
+      const isAttachedDocument = !documentToEdit.final_pdf_url;
+      
+      if (isAttachedDocument) {
+        // Documento adjunto: ir a la vista de adjuntar
+        this.router.navigate(['/documents/attach', documentToEdit.qr_id, 'upload']);
+      } else {
+        // Documento embebido: ir al editor de posición del QR
+        this.router.navigate(['/editor', documentToEdit.qr_id]);
+      }
       // Limpiar después de navegar
       this.documentToEdit = null;
     } else if (editType === 'folder') {

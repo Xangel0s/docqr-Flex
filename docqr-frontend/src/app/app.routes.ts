@@ -17,6 +17,21 @@ export const routes: Routes = [
     canActivate: [AuthGuard]
   },
   {
+    path: 'documents/create',
+    loadComponent: () => import('./features/upload/upload.component').then(m => m.UploadComponent),
+    canActivate: [AuthGuard]
+  },
+  {
+    path: 'documents/attach',
+    loadComponent: () => import('./features/documents/attach-document.component').then(m => m.AttachDocumentComponent),
+    canActivate: [AuthGuard]
+  },
+  {
+    path: 'documents/attach/:qrId/upload',
+    loadComponent: () => import('./features/documents/attach-upload.component').then(m => m.AttachUploadComponent),
+    canActivate: [AuthGuard]
+  },
+  {
     path: 'editor/:qrId',
     loadComponent: () => import('./features/pdf-editor/pdf-editor.component').then(m => m.PdfEditorComponent),
     canActivate: [AuthGuard]

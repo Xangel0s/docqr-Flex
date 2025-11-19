@@ -74,6 +74,21 @@ class UploadController extends Controller
                 'file_path' => $file->getRealPath()
             ]);
 
+            // Validar integridad del PDF (que no esté corrupto)
+            $integrityCheck = $this->validatePdfIntegrity($file);
+            if (!$integrityCheck['valid']) {
+                Log::warning('PDF corrupto o inválido detectado:', [
+                    'message' => $integrityCheck['message'],
+                    'file_name' => $file->getClientOriginalName(),
+                    'error' => $integrityCheck['error'] ?? 'N/A'
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => $integrityCheck['message']
+                ], 422);
+            }
+            
             // Validar que el PDF tenga solo 1 página
             $pdfInfo = $this->validatePdfPages($file);
             if (!$pdfInfo['valid']) {
@@ -97,10 +112,13 @@ class UploadController extends Controller
             // Generar ID único para el QR (verificar que no exista)
             // Cada documento tiene su propio QR único, incluso si es el mismo archivo
             // Sistema automático: si existe, genera otro sin que el usuario se dé cuenta
+            Log::info('🔵 PASO 1: Generando QR ID único...');
             $qrId = $this->generateUniqueQrId();
+            Log::info('✅ PASO 1: QR ID generado:', ['qr_id' => $qrId]);
 
             // Extraer el tipo de documento del folder_name (CE, IN, SU)
-            $documentType = $this->extractDocumentType($folderName);
+            Log::info('🔵 PASO 2: Extrayendo tipo de documento...');
+            $documentType = \App\Models\QrFile::extractDocumentType($folderName);
             
             // Obtener mes y año en formato YYYYMM (ej: 202511 para noviembre 2025)
             $monthYear = now()->format('Ym'); // 202511, 202512, 202601, etc.
@@ -109,27 +127,36 @@ class UploadController extends Controller
             // Ejemplo: uploads/CE/202511/{qr_id}/documento.pdf
             // Ventajas: Organización por fecha, cada documento en su carpeta, más escalable
             $storageFolder = "uploads/{$documentType}/{$monthYear}/{$qrId}";
+            Log::info('✅ PASO 2: Carpeta de destino:', ['folder' => $storageFolder]);
             
             // Asegurar que la carpeta existe (crea todas las subcarpetas necesarias)
+            Log::info('🔵 PASO 3: Creando carpetas...');
             Storage::disk('local')->makeDirectory($storageFolder);
+            Log::info('✅ PASO 3: Carpetas creadas');
 
             // Guardar el PDF con nombre original (sin prefijos, más limpio)
             // Ejemplo: documento.pdf (dentro de uploads/CE/202511/{qr_id}/)
+            Log::info('🔵 PASO 4: Guardando archivo PDF...');
             $originalFilename = $file->getClientOriginalName();
             $filename = $originalFilename; // Nombre original sin modificaciones
             $filePath = $file->storeAs($storageFolder, $filename, 'local');
             $fileSize = $file->getSize();
+            Log::info('✅ PASO 4: Archivo guardado:', ['path' => $filePath, 'size' => $fileSize]);
 
             // Generar URL para el QR (usar helper que respeta protocolo de solicitud)
+            Log::info('🔵 PASO 5: Generando URL para el QR...');
             $qrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
+            Log::info('✅ PASO 5: URL generada:', ['qr_url' => $qrUrl]);
 
             // Generar código QR (OBLIGATORIO - solo se guarda si el QR se genera exitosamente)
+            Log::info('🔵 PASO 6: Generando imagen QR...');
             try {
                 $qrPath = $this->qrGenerator->generate($qrUrl, $qrId);
+                Log::info('✅ PASO 6: Imagen QR generada:', ['qr_path' => $qrPath]);
             } catch (\Exception $e) {
                 // Si falla la generación del QR, eliminar el PDF subido y retornar error
                 Storage::disk('local')->delete($filePath);
-                Log::error('Error al generar QR: ' . $e->getMessage());
+                Log::error('❌ ERROR PASO 6: Error al generar QR: ' . $e->getMessage());
                 return response()->json([
                     'success' => false,
                     'message' => 'Error al generar código QR: ' . $e->getMessage()
@@ -138,6 +165,7 @@ class UploadController extends Controller
 
             // Crear registro en la base de datos SOLO si el QR se generó exitosamente
             // Cada documento tiene su ID único independiente (id auto-incremental + qr_id único)
+            Log::info('🔵 PASO 7: Guardando en base de datos...');
             $qrFile = QrFile::create([
                 'qr_id' => $qrId, // ID único de 32 caracteres para el QR
                 'folder_name' => $folderName,
@@ -148,6 +176,7 @@ class UploadController extends Controller
                 'status' => 'uploaded', // Estado inicial: subido (aún no tiene QR embebido)
                 'scan_count' => 0, // Inicia en 0, solo se incrementa cuando se escanea el QR
             ]);
+            Log::info('✅ PASO 7: Guardado en BD exitosamente:', ['id' => $qrFile->id, 'qr_id' => $qrFile->qr_id]);
 
             // Invalidar cache de estadísticas cuando se crea un nuevo documento
             Cache::forget('documents_stats_v2');
@@ -171,7 +200,16 @@ class UploadController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('Error al subir PDF: ' . $e->getMessage());
+            Log::error('❌ ERROR CRÍTICO al subir PDF:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => [
+                    'has_file' => $request->hasFile('file'),
+                    'folder_name' => $request->input('folder_name'),
+                ]
+            ]);
             
             return response()->json([
                 'success' => false,
@@ -180,6 +218,81 @@ class UploadController extends Controller
         }
     }
 
+    /**
+     * Validar integridad del PDF (que no esté corrupto)
+     * 
+     * @param \Illuminate\Http\UploadedFile $file
+     * @return array
+     */
+    private function validatePdfIntegrity($file): array
+    {
+        try {
+            // Intentar abrir el PDF con FPDI para verificar que no esté corrupto
+            $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
+            
+            try {
+                $pageCount = $pdf->setSourceFile($file->getRealPath());
+                
+                if ($pageCount === 0) {
+                    return [
+                        'valid' => false,
+                        'message' => 'El archivo PDF está corrupto o no tiene páginas válidas. Por favor, verifica el archivo e intenta nuevamente.',
+                        'error' => 'PDF sin páginas'
+                    ];
+                }
+                
+                // Intentar importar la primera página para verificar integridad completa
+                $tplId = $pdf->importPage(1);
+                $size = $pdf->getTemplateSize($tplId);
+                
+                if (!$size || !isset($size['width']) || !isset($size['height'])) {
+                    return [
+                        'valid' => false,
+                        'message' => 'El archivo PDF está corrupto. No se pueden leer las dimensiones de la página. Por favor, verifica el archivo e intenta nuevamente.',
+                        'error' => 'No se pueden leer dimensiones'
+                    ];
+                }
+                
+                return [
+                    'valid' => true,
+                    'pages' => $pageCount
+                ];
+                
+            } catch (\setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException $e) {
+                $errorMsg = $e->getMessage();
+                if (stripos($errorMsg, 'password') !== false || 
+                    stripos($errorMsg, 'encrypted') !== false ||
+                    stripos($errorMsg, 'protected') !== false) {
+                    return [
+                        'valid' => false,
+                        'message' => 'El PDF está protegido con contraseña. Por favor, desbloquee el PDF antes de subirlo.',
+                        'error' => 'PDF protegido con contraseña'
+                    ];
+                }
+                
+                // Otro tipo de error de parsing (posible corrupción)
+                return [
+                    'valid' => false,
+                    'message' => 'El archivo PDF está corrupto o no se puede leer correctamente. Por favor, verifica el archivo e intenta nuevamente.',
+                    'error' => $errorMsg
+                ];
+            } catch (\Exception $e) {
+                return [
+                    'valid' => false,
+                    'message' => 'Error al validar el archivo PDF: ' . $e->getMessage() . '. Por favor, verifica que el archivo sea un PDF válido.',
+                    'error' => $e->getMessage()
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            return [
+                'valid' => false,
+                'message' => 'Error al procesar el archivo PDF. Por favor, verifica que el archivo sea un PDF válido y no esté corrupto.',
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+    
     /**
      * Validar que el PDF tenga solo 1 página
      * 
@@ -326,28 +439,6 @@ class UploadController extends Controller
         return $qrId;
     }
 
-    /**
-     * Extraer el tipo de documento del folder_name
-     * Ejemplo: "CE-12345" -> "CE", "IN-ABC" -> "IN", "SU-XYZ" -> "SU"
-     * 
-     * @param string $folderName
-     * @return string Tipo de documento (CE, IN, SU) o "OTROS" si no coincide
-     */
-    private function extractDocumentType(string $folderName): string
-    {
-        // Extraer las primeras letras antes del guion
-        $parts = explode('-', $folderName);
-        $type = strtoupper(trim($parts[0] ?? ''));
-        
-        // Validar que sea uno de los tipos permitidos
-        $allowedTypes = ['CE', 'IN', 'SU'];
-        
-        if (in_array($type, $allowedTypes)) {
-            return $type;
-        }
-        
-        // Si no coincide, usar "OTROS" como carpeta por defecto
-        return 'OTROS';
-    }
+    // Método extractDocumentType removido - usar QrFile::extractDocumentType() en su lugar
 }
 

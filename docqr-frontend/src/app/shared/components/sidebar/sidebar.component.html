@@ -91,17 +91,31 @@
         </a>
 
         <a 
-          routerLink="/upload" 
+          routerLink="/documents/create" 
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
           class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
-          [title]="isCollapsed ? 'Generar QR' : ''">
-          <span class="material-symbols-outlined text-base shrink-0">qr_code_2</span>
+          [title]="isCollapsed ? 'Embeber en PDF' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">edit</span>
           <p 
             class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
             [ngClass]="{
               'w-0 opacity-0': isCollapsed
-            }">Generar QR</p>
+            }">Embeber en PDF</p>
+        </a>
+
+        <a 
+          routerLink="/documents/attach" 
+          routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
+          (click)="navigateAndClose()"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
+          [title]="isCollapsed ? 'Adjuntar a QR' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">attach_file</span>
+          <p 
+            class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
+            [ngClass]="{
+              'w-0 opacity-0': isCollapsed
+            }">Adjuntar a QR</p>
         </a>
 
         <a 

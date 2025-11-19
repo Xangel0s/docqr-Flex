@@ -95,5 +95,30 @@ class QrFile extends Model
     {
         return $query->where('folder_name', $folderName);
     }
+    
+    /**
+     * Extraer el tipo de documento del folder_name
+     * 
+     * Ejemplo: "CE-12345" -> "CE", "IN-ABC" -> "IN", "SU-XYZ" -> "SU"
+     * 
+     * @param string $folderName Nombre de la carpeta (formato: TIPO-CODIGO)
+     * @return string Tipo de documento (CE, IN, SU) o "OTROS" si no coincide
+     */
+    public static function extractDocumentType(string $folderName): string
+    {
+        // Extraer las primeras letras antes del guion
+        $parts = explode('-', $folderName);
+        $type = strtoupper(trim($parts[0] ?? ''));
+        
+        // Validar que sea uno de los tipos permitidos
+        $allowedTypes = ['CE', 'IN', 'SU'];
+        
+        if (in_array($type, $allowedTypes)) {
+            return $type;
+        }
+        
+        // Si no coincide, usar "OTROS" como carpeta por defecto
+        return 'OTROS';
+    }
 }
 

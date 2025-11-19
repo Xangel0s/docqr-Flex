@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -58,6 +57,16 @@ class EmbedController extends Controller
 
             // Buscar el archivo QR (incluyendo eliminados con soft delete)
             $qrId = $request->input('qr_id');
+            
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
+                Log::warning('Intento de acceso con qr_id inválido en embed:', ['qr_id' => $qrId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ID de documento inválido'
+                ], 400);
+            }
+            
             $qrFile = QrFile::withTrashed()->where('qr_id', $qrId)->first();
 
             if (!$qrFile) {
@@ -113,11 +122,29 @@ class EmbedController extends Controller
             }
 
             // Preparar posición
+            // CRÍTICO: Forzar que width y height sean iguales usando width como referencia
+            // Esto mantiene el tamaño visual original (ej: 125x125, no 131x131)
+            $requestWidth = (float) $request->input('width');
+            $requestHeight = (float) $request->input('height');
+            
+            // Usar width como referencia para mantener tamaño visual original
+            // Si hay diferencia, usar width (no promedio) para no "crecer" el QR
+            $finalDimension = $requestWidth;
+            
+            // Log si hay diferencia para debugging
+            if (abs($requestWidth - $requestHeight) > 0.01) {
+                Log::info('Corrigiendo dimensiones del QR en backend para mantener cuadrado:', [
+                    'original' => ['width' => $requestWidth, 'height' => $requestHeight],
+                    'corregido' => ['width' => $finalDimension, 'height' => $finalDimension],
+                    'nota' => 'Usando width como referencia para mantener tamaño visual'
+                ]);
+            }
+            
             $position = [
                 'x' => (float) $request->input('x'),
                 'y' => (float) $request->input('y'),
-                'width' => (float) $request->input('width'),
-                'height' => (float) $request->input('height'),
+                'width' => $finalDimension,   // Usar width como referencia
+                'height' => $finalDimension,  // Forzar igual a width
             ];
 
             Log::info('Intentando embebir QR:', [
@@ -149,13 +176,19 @@ class EmbedController extends Controller
             }
 
             // Procesar PDF y embebir QR
+            // Obtener título del documento para metadatos del PDF
+            $documentTitle = $qrFile->original_filename ?: $qrFile->folder_name;
+            
             // Pasar qr_id para nueva estructura optimizada de carpetas
+            // Pasar título y nombre de carpeta para metadatos del PDF
             $finalPath = $this->pdfProcessor->embedQr(
                 $validationPath,
                 $qrFile->qr_path,
                 $position,
                 $pdfDiskToUse,
-                $qrFile->qr_id // Pasar qr_id para nueva estructura
+                $qrFile->qr_id, // Pasar qr_id para nueva estructura
+                $documentTitle,  // Título del documento para metadatos
+                $qrFile->folder_name // Nombre de carpeta como fallback
             );
 
             // Actualizar registro PRIMERO (antes de eliminar archivos)
@@ -282,6 +315,16 @@ class EmbedController extends Controller
 
             // Buscar el archivo QR
             $qrId = $request->input('qr_id');
+            
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
+                Log::warning('Intento de acceso con qr_id inválido en embedPdf:', ['qr_id' => $qrId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'ID de documento inválido'
+                ], 400);
+            }
+            
             $qrFile = QrFile::withTrashed()->where('qr_id', $qrId)->first();
 
             if (!$qrFile) {
@@ -314,7 +357,7 @@ class EmbedController extends Controller
             }
             
             // NUEVA ESTRUCTURA OPTIMIZADA: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
-            $documentType = $this->extractDocumentType($qrFile->folder_name);
+            $documentType = \App\Models\QrFile::extractDocumentType($qrFile->folder_name);
             $monthYear = now()->format('Ym');
             $finalFolder = "{$documentType}/{$monthYear}/{$qrFile->qr_id}";
             Storage::disk('final')->makeDirectory($finalFolder);
@@ -424,11 +467,29 @@ class EmbedController extends Controller
             }
 
             // Preparar posición
+            // CRÍTICO: Forzar que width y height sean iguales usando width como referencia
+            // Esto mantiene el tamaño visual original (ej: 125x125, no 131x131)
+            $requestWidth = (float) $request->input('width');
+            $requestHeight = (float) $request->input('height');
+            
+            // Usar width como referencia para mantener tamaño visual original
+            // Si hay diferencia, usar width (no promedio) para no "crecer" el QR
+            $finalDimension = $requestWidth;
+            
+            // Log si hay diferencia para debugging
+            if (abs($requestWidth - $requestHeight) > 0.01) {
+                Log::info('Corrigiendo dimensiones del QR en backend (embedPdf) para mantener cuadrado:', [
+                    'original' => ['width' => $requestWidth, 'height' => $requestHeight],
+                    'corregido' => ['width' => $finalDimension, 'height' => $finalDimension],
+                    'nota' => 'Usando width como referencia para mantener tamaño visual'
+                ]);
+            }
+            
             $position = [
                 'x' => (float) $request->input('x'),
                 'y' => (float) $request->input('y'),
-                'width' => (float) $request->input('width'),
-                'height' => (float) $request->input('height'),
+                'width' => $finalDimension,   // Usar width como referencia
+                'height' => $finalDimension,  // Forzar igual a width
             ];
 
             // Validar que la posición esté dentro del PDF (sin margen - libertad total)
@@ -507,28 +568,6 @@ class EmbedController extends Controller
         }
     }
 
-    /**
-     * Extraer el tipo de documento del folder_name
-     * Ejemplo: "CE-12345" -> "CE", "IN-ABC" -> "IN", "SU-XYZ" -> "SU"
-     * 
-     * @param string $folderName
-     * @return string Tipo de documento (CE, IN, SU) o "OTROS" si no coincide
-     */
-    private function extractDocumentType(string $folderName): string
-    {
-        // Extraer las primeras letras antes del guion
-        $parts = explode('-', $folderName);
-        $type = strtoupper(trim($parts[0] ?? ''));
-        
-        // Validar que sea uno de los tipos permitidos
-        $allowedTypes = ['CE', 'IN', 'SU'];
-        
-        if (in_array($type, $allowedTypes)) {
-            return $type;
-        }
-        
-        // Si no coincide, usar "OTROS" como carpeta por defecto
-        return 'OTROS';
-    }
+    // Método extractDocumentType removido - usar QrFile::extractDocumentType() en su lugar
 }
 

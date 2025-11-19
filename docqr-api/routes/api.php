@@ -49,14 +49,16 @@ Route::middleware([AuthMiddleware::class])->group(function () {
     // Rutas para gestión de documentos
     Route::get('/documents', [DocumentController::class, 'index']);
     Route::get('/documents/stats', [DocumentController::class, 'stats']);
+    Route::post('/documents/create', [DocumentController::class, 'create']); // Crear documento sin PDF
     Route::get('/documents/qr/{qrId}', [DocumentController::class, 'showByQrId']);
     Route::get('/documents/{id}', [DocumentController::class, 'show']);
     Route::put('/documents/qr/{qrId}/folder-name', [DocumentController::class, 'updateFolderName']);
     Route::post('/documents/qr/{qrId}/regenerate-qr', [DocumentController::class, 'regenerateQr']); // Regenerar QR con URL actualizada
+    Route::post('/documents/qr/{qrId}/attach-pdf', [DocumentController::class, 'attachPdf']); // Adjuntar PDF sin procesar
     Route::delete('/documents/{id}', [DocumentController::class, 'destroy']);
 
-// Endpoint de prueba para diagnosticar URLs (TEMPORAL - eliminar en producción)
-Route::get('/test-url', function (\Illuminate\Http\Request $request) {
+    // Endpoint de prueba para diagnosticar URLs (TEMPORAL - eliminar en producción)
+    Route::get('/test-url', function (\Illuminate\Http\Request $request) {
     return response()->json([
         'FRONTEND_URL_env' => env('FRONTEND_URL'),
         'FRONTEND_URL_config' => config('app.frontend_url', 'NO CONFIGURADO'),
@@ -73,10 +75,10 @@ Route::get('/test-url', function (\Illuminate\Http\Request $request) {
         'full_url' => $request->fullUrl(),
         'origin' => $request->header('Origin'),
     ]);
-});
+    });
 
-// Endpoint de diagnóstico para verificar archivos PDF (TEMPORAL - eliminar en producción)
-Route::get('/diagnose-pdf/{qrId}', function (string $qrId) {
+    // Endpoint de diagnóstico para verificar archivos PDF (TEMPORAL - eliminar en producción)
+    Route::get('/diagnose-pdf/{qrId}', function (string $qrId) {
     try {
         $qrFile = \App\Models\QrFile::where('qr_id', $qrId)->firstOrFail();
         
@@ -126,7 +128,7 @@ Route::get('/diagnose-pdf/{qrId}', function (string $qrId) {
             'trace' => $e->getTraceAsString()
         ], 500);
     }
-});
+    });
 
     // Rutas del sistema
     Route::get('/system/compression-status', [SystemController::class, 'compressionStatus']);

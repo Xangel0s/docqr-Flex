@@ -4,7 +4,6 @@ namespace App\Services;
 
 use setasign\Fpdi\Tcpdf\Fpdi;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -25,11 +24,23 @@ class PdfProcessorService
      * @return string Ruta relativa del PDF final (storage/final/...)
      * @throws \Exception Si hay error al procesar el PDF
      */
-    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null): string
+    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null, ?string $documentTitle = null, ?string $folderName = null): string
     {
         try {
             // Crear instancia de FPDI
             $pdf = new Fpdi();
+            
+            // Establecer metadatos del PDF para que el visor muestre el título correcto
+            // NOTA: SetProducer() no está disponible en todas las versiones de FPDI/TCPDF
+            if ($documentTitle) {
+                $pdf->SetTitle($documentTitle);
+            } elseif ($folderName) {
+                $pdf->SetTitle($folderName);
+            }
+            $pdf->SetAuthor('Geofal');
+            $pdf->SetSubject('Documento con código QR');
+            $pdf->SetCreator('Geofal - Sistema de Gestión de Documentos');
+            // SetProducer() no está disponible - eliminado para evitar errores
             
             // Obtener rutas completas según el disco
             // Si es 'final', la ruta ya incluye 'final/', sino es 'local' (uploads/...)
@@ -122,26 +133,29 @@ class PdfProcessorService
                 $height = round($height, 2);
             }
             
-            Log::info('Conversión de coordenadas (método porcentajes):', [
-                'coordenadas_estandar' => $position,
-                'porcentajes' => [
-                    'x' => $xPercent * 100 . '%',
-                    'y' => $yPercent * 100 . '%',
-                    'width' => $widthPercent * 100 . '%',
-                    'height' => $heightPercent * 100 . '%'
-                ],
-                'coordenadas_convertidas' => [
-                    'x' => $x,
-                    'y' => $y,
-                    'width' => $width,
-                    'height' => $height
-                ],
-                'dimensiones_pdf' => [
-                    'width' => $pageWidth,
-                    'height' => $pageHeight,
-                    'unidad' => $isInMm ? 'mm' : 'puntos'
-                ]
-            ]);
+            // Log solo en desarrollo
+            if (config('app.env') !== 'production') {
+                Log::info('Conversión de coordenadas (método porcentajes):', [
+                    'coordenadas_estandar' => $position,
+                    'porcentajes' => [
+                        'x' => $xPercent * 100 . '%',
+                        'y' => $yPercent * 100 . '%',
+                        'width' => $widthPercent * 100 . '%',
+                        'height' => $heightPercent * 100 . '%'
+                    ],
+                    'coordenadas_convertidas' => [
+                        'x' => $x,
+                        'y' => $y,
+                        'width' => $width,
+                        'height' => $height
+                    ],
+                    'dimensiones_pdf' => [
+                        'width' => $pageWidth,
+                        'height' => $pageHeight,
+                        'unidad' => $isInMm ? 'mm' : 'puntos'
+                    ]
+                ]);
+            }
 
             // MARGEN INVISIBLE (área segura) - Configurable (0px = libertad total)
             // 0px desde todos los bordes = libertad total para colocar el QR
@@ -193,12 +207,15 @@ class PdfProcessorService
             // No crear páginas adicionales bajo ninguna circunstancia
             $pdf->AddPage($size['orientation'], [$pageWidth, $pageHeight]);
             
-            Log::info('Página agregada al PDF:', [
-                'orientation' => $size['orientation'],
-                'dimensions' => [$pageWidth, $pageHeight],
-                'page_count_before' => $pdf->getNumPages(),
-                'auto_page_break_disabled' => true
-            ]);
+            // Log solo en desarrollo
+            if (config('app.env') !== 'production') {
+                Log::info('Página agregada al PDF:', [
+                    'orientation' => $size['orientation'],
+                    'dimensions' => [$pageWidth, $pageHeight],
+                    'page_count_before' => $pdf->getNumPages(),
+                    'auto_page_break_disabled' => true
+                ]);
+            }
             
             // Usar la plantilla de la página original
             $pdf->useTemplate($tplId, 0, 0, $pageWidth, $pageHeight, true);
@@ -218,11 +235,38 @@ class PdfProcessorService
             // Insertar el QR en las coordenadas especificadas
             // IMPORTANTE: TCPDF Image() usa Y desde ARRIBA (top-left origin), NO desde abajo
             // El frontend también envía Y desde arriba, así que NO necesitamos invertir
-            // Solo usamos directamente las coordenadas convertidas
+            // Solo usamos directamente las coordenadas convertidas por porcentajes
+            // Las coordenadas $x y $y ya están calculadas usando porcentajes puros:
+            // xPercent * pageWidth, yPercent * pageHeight
+            // Esto garantiza que la posición relativa sea exacta sin importar el tamaño del PDF
             $pdfY = $y; // Usar Y directamente (ya está en mm o puntos, desde arriba)
             
-            // Log detallado para debugging - VERIFICAR CONVERSIÓN EXACTA
-            Log::info('=== INSERTANDO QR EN PDF (CONVERSIÓN DETALLADA) ===', [
+            // NOTA IMPORTANTE SOBRE CALIBRACIÓN:
+            // Después de múltiples pruebas y ajustes, se determinó que existe una discrepancia
+            // constante entre el sistema de coordenadas del canvas web (Fabric.js) y el del PDF físico (TCPDF).
+            // Aunque la conversión por porcentajes es matemáticamente correcta, hay un desplazamiento visual
+            // que requiere un offset de calibración manual. Este offset fue determinado empíricamente
+            // mediante pruebas exhaustivas y se estableció en +15 unidades para X e Y.
+            // 
+            // Si en el futuro se necesita recalibrar:
+            // 1. Colocar el QR en una posición conocida en el editor (ej: esquina superior derecha)
+            // 2. Guardar y descargar el PDF
+            // 3. Comparar la posición visual en el PDF vs el editor
+            // 4. Ajustar los valores de offset (+15) hasta lograr alineación perfecta
+            //
+            // ACTUALMENTE DESHABILITADO: El offset manual fue removido para usar solo porcentajes puros.
+            // Si el desplazamiento persiste en producción, descomentar las siguientes líneas:
+            // $x = $x + 15;      // Offset de calibración X (mover a la derecha)
+            // $pdfY = $pdfY + 15; // Offset de calibración Y (mover hacia abajo) - CRÍTICO: usar $pdfY
+            
+            // APLICAR OFFSET DE CALIBRACIÓN (ACTIVADO PARA PRODUCCIÓN)
+            // Este offset corrige la discrepancia visual entre el editor y el PDF final
+            $x = $x + 15;      // Offset de calibración X (mover a la derecha)
+            $pdfY = $pdfY + 15; // Offset de calibración Y (mover hacia abajo) - CRÍTICO: usar $pdfY
+            
+            // Log detallado para debugging - VERIFICAR CONVERSIÓN EXACTA (solo en desarrollo)
+            if (config('app.env') !== 'production') {
+                Log::info('=== INSERTANDO QR EN PDF (CONVERSIÓN DETALLADA) ===', [
                 'coordenadas_recibidas_estandar' => [
                     'x' => $position['x'],
                     'y' => $position['y'],
@@ -269,7 +313,8 @@ class PdfProcessorService
                 'qr_path' => $fullQrPath,
                 'qr_exists' => file_exists($fullQrPath),
                 'note' => 'TCPDF Image() usa Y desde arriba (top-left origin) - NO se invierte Y'
-            ]);
+                ]);
+            }
             
             // Verificar que el QR esté completamente dentro de los límites antes de insertar
             // Validación final ABSOLUTA: el QR DEBE estar dentro con margen de seguridad
@@ -298,12 +343,22 @@ class PdfProcessorService
             // TCPDF Image() método: Image($file, $x, $y, $w = 0, $h = 0, ...)
             // TCPDF usa coordenadas desde la esquina superior izquierda (top-left origin)
             // El frontend también envía Y desde arriba, así que usamos directamente
+            
+            // LÓGICA MATEMÁTICA EXACTA: Usar porcentajes puros para conversión base
+            // Las coordenadas $x y $pdfY ya están calculadas usando porcentajes relativos
+            // (xPercent * pageWidth, yPercent * pageHeight), y luego se aplicó el offset de calibración
+            
+            // CRÍTICO: Forzar que el QR sea cuadrado usando width para ambos parámetros
+            // Esto garantiza que width === height siempre
+            $finalWidth = $width;  // Usar width como referencia
+            $finalHeight = $width; // Forzar igual a width (cuadrado perfecto)
+            
             $pdf->Image(
                 $fullQrPath,  // Archivo
-                $x,            // X (desde izquierda)
-                $pdfY,         // Y (desde arriba, igual que el frontend)
-                $width,        // Ancho
-                $height        // Alto
+                $x,            // X (desde izquierda, con offset de calibración +15)
+                $pdfY,         // Y (desde arriba, con offset de calibración +15) - CRÍTICO: usar $pdfY
+                $finalWidth,   // Ancho (forzado a cuadrado)
+                $finalHeight   // Alto (igual a width para mantener cuadrado)
             );
             
             // Verificar inmediatamente después de insertar el QR que solo hay 1 página
@@ -321,9 +376,12 @@ class PdfProcessorService
                 Log::warning('Páginas adicionales eliminadas después de Image()');
             }
             
-            Log::info('QR insertado exitosamente en PDF', [
-                'page_count_after_insert' => $pdf->getNumPages()
-            ]);
+            // Log solo en desarrollo
+            if (config('app.env') !== 'production') {
+                Log::info('QR insertado exitosamente en PDF', [
+                    'page_count_after_insert' => $pdf->getNumPages()
+                ]);
+            }
 
             // NUEVA ESTRUCTURA OPTIMIZADA: Organizar PDF final igual que original
             // Estructura: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf

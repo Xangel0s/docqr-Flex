@@ -26,12 +26,22 @@
 
     <!-- PDF Viewer Container -->
     <div class="flex-1 overflow-hidden bg-gray-100" [class.dark-mode]="darkMode">
+      <!-- Mensaje de error si no hay URL válida -->
+      <div *ngIf="!safePdfUrl && isOpen" class="flex items-center justify-center h-full">
+        <div class="text-center p-8">
+          <span class="material-symbols-outlined text-6xl text-gray-400 mb-4">error_outline</span>
+          <p class="text-gray-600 text-lg mb-2">No se pudo cargar el documento</p>
+          <p class="text-gray-500 text-sm">El archivo PDF no está disponible o la URL es inválida</p>
+        </div>
+      </div>
+      
       <!-- Usar iframe simple para mostrar PDF (más confiable) -->
       <iframe
         *ngIf="safePdfUrl && isOpen"
         [src]="safePdfUrl"
         class="w-full h-full border-0"
-        title="Vista previa del PDF">
+        title="Vista previa del PDF"
+        (error)="onIframeError()">
       </iframe>
       
       <!-- Alternativa con ngx-extended-pdf-viewer (comentado hasta resolver assets) -->

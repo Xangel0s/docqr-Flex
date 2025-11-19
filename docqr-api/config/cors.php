@@ -18,10 +18,14 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => array_merge([
-        'https://docqr.geofal.com.pe',
+        'https://docqr.geofal.com.pe', // Dominio de producción (SIEMPRE permitido)
+    ], in_array(env('APP_ENV', 'production'), ['local', 'development']) ? [
+        // Solo en desarrollo/local: permitir localhost y ngrok
         'http://localhost:4200',
         'http://127.0.0.1:4200',
-    ], in_array(env('APP_ENV', 'production'), ['local', 'development']) ? ['*'] : []),
+        'http://localhost',
+        'http://127.0.0.1',
+    ] : []),
 
     /*
     |--------------------------------------------------------------------------

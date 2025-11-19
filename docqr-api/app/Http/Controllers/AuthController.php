@@ -7,12 +7,11 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 
 class AuthController extends Controller
 {
     /**
-     * Login de usuario
+     * Login de usuario usando Laravel Sanctum
      */
     public function login(Request $request): JsonResponse
     {
@@ -22,8 +21,7 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Optimización: usar índice en username e is_active
-            // La consulta es rápida incluso con múltiples usuarios simultáneos
+            // Buscar usuario activo por username
             $user = User::where('username', $request->username)
                 ->where('is_active', true)
                 ->first();
@@ -35,6 +33,7 @@ class AuthController extends Controller
                 ], 401);
             }
 
+            // Verificar contraseña
             if (!Hash::check($request->password, $user->password)) {
                 return response()->json([
                     'success' => false,
@@ -42,14 +41,18 @@ class AuthController extends Controller
                 ], 401);
             }
 
-            // Crear token simple (en producción usar JWT o Sanctum)
-            $token = base64_encode($user->id . ':' . $user->username . ':' . time());
+            // Borrar tokens anteriores para no acumular basura
+            $user->tokens()->delete();
 
-            Log::info('Usuario autenticado', [
+            // Crear nuevo token con Sanctum
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            Log::info('Usuario autenticado con Sanctum', [
                 'user_id' => $user->id,
                 'username' => $user->username
             ]);
 
+            // Retornar respuesta compatible con el frontend existente
             return response()->json([
                 'success' => true,
                 'message' => 'Login exitoso',
@@ -62,6 +65,8 @@ class AuthController extends Controller
                         'role' => $user->role,
                     ],
                     'token' => $token,
+                    // También incluir access_token para compatibilidad
+                    'access_token' => $token,
                 ]
             ], 200);
 
@@ -79,22 +84,22 @@ class AuthController extends Controller
     }
 
     /**
-     * Verificar token y obtener usuario actual
-     * Optimizado para múltiples usuarios simultáneos
+     * Obtener usuario actual autenticado (usando Sanctum)
      */
     public function me(Request $request): JsonResponse
     {
         try {
-            $user = $this->getUserFromToken($request);
+            // Sanctum automáticamente autentica el usuario desde el token
+            $user = $request->user();
 
             if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Token inválido'
+                    'message' => 'Token inválido o usuario no autenticado'
                 ], 401);
             }
 
-            // Retornar datos del usuario sin consultas adicionales
+            // Retornar datos del usuario
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -118,49 +123,44 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout
+     * Alias para compatibilidad con frontend
+     * @deprecated Usar me() en su lugar
      */
-    public function logout(Request $request): JsonResponse
+    public function user(Request $request): JsonResponse
     {
-        // En un sistema simple, el logout se maneja en el frontend
-        // Eliminando el token del almacenamiento local
-        return response()->json([
-            'success' => true,
-            'message' => 'Sesión cerrada exitosamente'
-        ], 200);
+        return $this->me($request);
     }
 
     /**
-     * Obtener usuario desde token
+     * Logout - Eliminar token actual usando Sanctum
      */
-    private function getUserFromToken(Request $request): ?User
+    public function logout(Request $request): JsonResponse
     {
-        $token = $request->header('Authorization');
-        
-        if (!$token) {
-            return null;
-        }
-
-        // Remover "Bearer " si existe
-        $token = str_replace('Bearer ', '', $token);
-
         try {
-            $decoded = base64_decode($token);
-            $parts = explode(':', $decoded);
-            
-            if (count($parts) < 2) {
-                return null;
+            // Obtener usuario autenticado
+            $user = $request->user();
+        
+            if ($user) {
+                // Eliminar el token actual
+                $user->currentAccessToken()->delete();
+
+                Log::info('Usuario cerró sesión', [
+                    'user_id' => $user->id,
+                    'username' => $user->username
+                ]);
             }
 
-            $userId = (int)$parts[0];
-            $user = User::where('id', $userId)
-                ->where('is_active', true)
-                ->first();
-
-            return $user;
+            return response()->json([
+                'success' => true,
+                'message' => 'Sesión cerrada exitosamente'
+            ], 200);
 
         } catch (\Exception $e) {
-            return null;
+            Log::error('Error en logout: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al cerrar sesión'
+            ], 500);
         }
     }
 }

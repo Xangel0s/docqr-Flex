@@ -24,6 +24,12 @@ class ViewController extends Controller
     public function view(string $hash): Response
     {
         try {
+            // Validar qr_id contra inyección SQL
+            if (!\App\Helpers\QrIdValidator::isValid($hash)) {
+                Log::warning('Intento de acceso con qr_id inválido:', ['hash' => $hash]);
+                abort(400, 'ID de documento inválido');
+            }
+            
             // Buscar el documento por qr_id
             $qrFile = QrFile::where('qr_id', $hash)->first();
 
@@ -35,55 +41,63 @@ class ViewController extends Controller
             // Esto valida que el documento fue escaneado correctamente
             $qrFile->incrementScanCount();
 
-            // Determinar qué archivo servir
-            // Si existe el PDF final con QR, servir ese, sino el original
-            Log::info('Visualizando documento:', [
-                'qr_id' => $hash,
-                'status' => $qrFile->status,
-                'final_path' => $qrFile->final_path,
-                'file_path' => $qrFile->file_path,
-                'has_final_path' => !empty($qrFile->final_path)
-            ]);
+            // Determinar qué archivo servir usando helper compartido
+            // Priorización: final_path > file_path > rutas alternativas
+            $pdfInfo = \App\Helpers\PdfPathHelper::getPdfPathToServe($qrFile);
             
-            if ($qrFile->final_path) {
-                // PDF final: final/CE/filename.pdf -> CE/filename.pdf
-                $filePath = str_replace('final/', '', $qrFile->final_path);
-                $disk = 'final';
-                $fullPath = Storage::disk($disk)->path($filePath);
-                Log::info('Sirviendo PDF final con QR:', [
-                    'file_path' => $filePath,
-                    'full_path' => $fullPath,
-                    'exists' => file_exists($fullPath)
-                ]);
-            } else {
-                // PDF original: uploads/CE/CE-12345/filename.pdf
-                // ADVERTENCIA: El QR no está embebido aún, se está sirviendo el PDF original
-                $filePath = $qrFile->file_path;
-                $disk = 'local';
-                $fullPath = Storage::disk($disk)->path($filePath);
-                Log::warning('Sirviendo PDF original (QR no embebido aún):', [
+            if (!$pdfInfo) {
+                Log::error('No se encontró archivo PDF para el documento:', [
                     'qr_id' => $hash,
-                    'status' => $qrFile->status,
-                    'file_path' => $filePath,
-                    'full_path' => $fullPath,
-                    'exists' => file_exists($fullPath),
-                    'message' => 'El documento aún no tiene el QR embebido. Use el editor para posicionar y embebir el QR.'
+                    'final_path' => $qrFile->final_path,
+                    'file_path' => $qrFile->file_path
                 ]);
+                abort(404, 'Archivo PDF no encontrado');
             }
-
-            // Verificar que el archivo existe
-            if (!file_exists($fullPath)) {
-                abort(404, 'Archivo no encontrado');
-            }
+            
+            $filePath = $pdfInfo['filePath'];
+            $disk = $pdfInfo['disk'];
+            $fullPath = $pdfInfo['fullPath'];
+            $pdfType = $pdfInfo['type'];
+            
+            Log::info('Sirviendo PDF:', [
+                'qr_id' => $hash,
+                'type' => $pdfType,
+                'file_path' => $filePath,
+                'full_path' => $fullPath,
+                'exists' => file_exists($fullPath),
+                'message' => $pdfType === 'final' 
+                    ? 'PDF final con QR embebido' 
+                    : 'PDF original (QR no embebido aún)'
+            ]);
 
             // Leer el contenido del archivo
             $content = file_get_contents($fullPath);
 
             // Retornar respuesta con headers apropiados para PDF
-            return response($content, 200)
+            // Headers de seguridad básicos (SecurityHeaders middleware maneja los demás)
+            // Cache-Control: no-store para evitar problemas de caché en clientes
+            $response = response($content, 200)
                 ->header('Content-Type', 'application/pdf')
                 ->header('Content-Disposition', 'inline; filename="' . $qrFile->original_filename . '"')
-                ->header('Cache-Control', 'public, max-age=3600');
+                ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                ->header('Pragma', 'no-cache')
+                ->header('Expires', '0')
+                ->header('X-Content-Type-Options', 'nosniff');
+            
+            // Headers de seguridad para producción
+            // En producción, SecurityHeaders middleware aplica la mayoría de headers
+            // Aquí solo agregamos headers específicos para PDFs embebidos
+            if (config('app.env') === 'production') {
+                // Permitir iframe solo desde el dominio del frontend
+                $frontendUrl = 'https://docqr.geofal.com.pe';
+                $response->header('X-Frame-Options', 'SAMEORIGIN');
+                $response->header('Content-Security-Policy', "frame-ancestors 'self' {$frontendUrl};");
+            } else {
+                // En desarrollo, permitir más flexibilidad
+                $response->header('X-Frame-Options', 'SAMEORIGIN');
+            }
+            
+            return $response;
 
         } catch (\Exception $e) {
             Log::error('Error al visualizar PDF: ' . $e->getMessage());

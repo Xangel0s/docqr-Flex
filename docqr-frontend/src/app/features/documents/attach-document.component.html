@@ -1,0 +1,106 @@
+<div class="min-h-screen bg-background-light flex">
+  <!-- Sidebar -->
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <!-- Contenido principal -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 container mx-auto px-4 py-8 max-w-4xl">
+      <!-- Título -->
+      <div class="mb-8">
+        <h1 class="text-4xl font-black text-gray-900 mb-2">Adjuntar a QR</h1>
+        <p class="text-base text-gray-600">Crea una carpeta y genera el código QR. Luego podrás adjuntar el PDF final.</p>
+      </div>
+
+      <!-- Formulario -->
+      <div class="mb-6">
+        <div class="bg-white rounded-lg border border-gray-200 p-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="flex flex-col gap-2">
+              <label for="doc-type" class="text-sm font-medium text-gray-800">
+                Tipo Documento *
+              </label>
+              <div class="relative">
+                <select
+                  id="doc-type"
+                  [(ngModel)]="documentType"
+                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 pr-10 text-sm text-gray-900 focus:border-primary focus:ring-primary focus:outline-none appearance-none cursor-pointer"
+                  required>
+                  <option value="" disabled selected>Seleccione tipo documento</option>
+                  <option *ngFor="let type of documentTypes" [value]="type.value">
+                    {{ type.label }}
+                  </option>
+                </select>
+                <span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">expand_more</span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <label for="folder-name" class="text-sm font-medium text-gray-800">
+                Código *
+              </label>
+              <div class="flex items-center">
+                <!-- Prefijo fijo con las siglas -->
+                <div 
+                  class="h-10 flex items-center justify-center px-3 bg-gray-100 border border-r-0 border-gray-300 rounded-l-lg text-sm font-medium text-gray-700 min-w-[3rem]"
+                  [class.border-primary]="documentType"
+                  [class.bg-primary]="documentType"
+                  [class.text-white]="documentType"
+                  [class.bg-gray-200]="!documentType">
+                  {{ documentType || '--' }}
+                </div>
+                <!-- Campo editable -->
+                <input
+                  id="folder-name"
+                  type="text"
+                  [(ngModel)]="folderName"
+                  class="h-10 flex-1 rounded-r-lg border border-l-0 border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:ring-primary focus:outline-none"
+                  placeholder="Ingrese código"
+                  [class.border-primary]="documentType"
+                  required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Botones -->
+          <div class="flex flex-col sm:flex-row items-center justify-end gap-3 border-t border-gray-200 pt-6">
+            <button
+              type="button"
+              routerLink="/documents"
+              class="btn-secondary w-full sm:w-auto"
+              [disabled]="isCreating">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              (click)="createDocument()"
+              class="btn-primary w-full sm:w-auto"
+              [disabled]="!isFormValid() || isCreating">
+              <span *ngIf="!isCreating">Crear y Generar QR</span>
+              <span *ngIf="isCreating">Creando...</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Información -->
+      <div class="bg-blue-50 rounded-lg border border-blue-200 p-4">
+        <div class="flex items-start gap-3">
+          <span class="material-symbols-outlined text-blue-600 text-xl">info</span>
+          <div class="flex-1">
+            <p class="text-sm font-medium text-blue-900 mb-1">¿Qué sigue?</p>
+            <p class="text-sm text-blue-800">
+              Después de crear la carpeta, podrás ver el código QR y subir el PDF final. 
+              El PDF se guardará tal cual, sin procesar ni modificar.
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+

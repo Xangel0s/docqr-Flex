@@ -1,0 +1,5 @@
+# Archivos ZIP de producción (no subir a GitHub - demasiado grandes)
+*.zip
+docqr-api-PRODUCTION*.zip
+docqr-frontend-PRODUCTION*.zip
+

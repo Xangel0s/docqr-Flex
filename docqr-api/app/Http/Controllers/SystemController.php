@@ -45,7 +45,7 @@ class SystemController extends Controller
                 ->groupBy('folder_name')
                 ->get()
                 ->map(function ($item) {
-                    $type = $this->extractDocumentType($item->folder_name);
+                    $type = \App\Models\QrFile::extractDocumentType($item->folder_name);
                     return [
                         'type' => $type,
                         'count' => $item->count

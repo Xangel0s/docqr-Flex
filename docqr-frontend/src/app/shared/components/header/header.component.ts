@@ -47,6 +47,20 @@ export class HeaderComponent implements OnInit, OnDestroy {
       this.currentUser = user;
     });
 
+    // Refrescar usuario desde el servidor al cargar (para obtener cambios de nombre)
+    // Esto asegura que si el nombre cambió en el backend, se actualice en el frontend
+    if (this.authService.isAuthenticated()) {
+      this.authService.refreshUser().subscribe({
+        next: (response) => {
+          // El usuario ya fue actualizado en refreshUser() -> checkAuth()
+          // El BehaviorSubject notificará automáticamente a los suscriptores (header)
+        },
+        error: () => {
+          // Error silencioso - no interrumpir la experiencia del usuario
+        }
+      });
+    }
+
     // Verificar estado de compresión al cargar
     this.checkCompressionStatus();
     

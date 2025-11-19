@@ -2,50 +2,37 @@
 
 use Illuminate\Support\Facades\Route;
 
-// Servir Frontend Angular (SPA) en la raíz
-Route::get('/', function () {
-    $frontendPath = public_path('frontend/index.html');
-    
-    // Si existe el frontend build, servirlo
-    if (file_exists($frontendPath)) {
-        return response()->file($frontendPath, [
-            'Content-Type' => 'text/html; charset=utf-8'
-        ]);
-    }
-    
-    // Si no existe, mostrar mensaje informativo
-    return response()->json([
-        'message' => 'Frontend no encontrado. Ejecuta: npm run build:frontend',
-        'instructions' => [
-            '1. cd docqr-api',
-            '2. npm run build:frontend',
-            '3. O manualmente: cd docqr-frontend && ng build --configuration=production'
-        ]
-    ], 404);
+// Health Check Endpoint
+Route::get('/up', function () {
+    return response()->json(['status' => 'ok'], 200);
 });
 
-// API Root (mover a /api/status o similar si se necesita)
-// Route::get('/api/status', function () {
-//     return response()->json([
-//         'message' => 'DocQR API - Sistema de Gestión de Documentos con QR',
-//         'version' => '1.0.0',
-//         'status' => 'active'
-//     ]);
-// });
+// API Root - Información de la API
+Route::get('/', function () {
+    return response()->json([
+        'message' => 'DocQR API - Sistema de Gestión de Documentos con QR',
+        'version' => '1.0.0',
+        'status' => 'active',
+        'endpoints' => [
+            'health' => '/up',
+            'api' => '/api',
+            'login' => '/api/auth/login',
+            'documents' => '/api/documents',
+        ],
+        'note' => 'Esta es una API REST. El frontend se ejecuta en http://localhost:4200'
+    ], 200);
+});
 
-// Servir Frontend Angular (SPA) para todas las demás rutas que no sean /api/*
-// IMPORTANTE: Esta ruta también maneja archivos estáticos antes de servir el index.html
-Route::get('/{any}', function ($any) {
-    // Primero, verificar si es un archivo estático (JS, CSS, imágenes, etc.)
+// Servir archivos estáticos del frontend (solo si se necesita en producción)
+// En desarrollo, el frontend se ejecuta en su propio servidor (puerto 4200)
+Route::get('/frontend/{path}', function ($path) {
     $staticExtensions = ['js', 'css', 'ico', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'woff', 'woff2', 'ttf', 'eot', 'json', 'map', 'mjs'];
-    $extension = pathinfo($any, PATHINFO_EXTENSION);
+    $extension = pathinfo($path, PATHINFO_EXTENSION);
     
     if (in_array(strtolower($extension), $staticExtensions)) {
-        // Construir la ruta del archivo (puede estar en subdirectorios como assets/)
-        $filePath = public_path("frontend/{$any}");
+        $filePath = public_path("frontend/{$path}");
         
         if (file_exists($filePath) && is_file($filePath)) {
-            // Determinar el MIME type correcto
             $mimeTypes = [
                 'js' => 'application/javascript',
                 'mjs' => 'application/javascript',
@@ -70,20 +57,22 @@ Route::get('/{any}', function ($any) {
                 'Content-Type' => $mimeType . '; charset=utf-8'
             ]);
         }
-        
-        // Si el archivo estático no existe, devolver 404
-        abort(404);
     }
     
-    // Si no es un archivo estático, servir el index.html para SPA routing
-    $frontendPath = public_path('frontend/index.html');
-    
-    if (file_exists($frontendPath)) {
-        return response()->file($frontendPath, [
-            'Content-Type' => 'text/html; charset=utf-8'
-        ]);
-    }
-    
-    // Si no existe el frontend, 404
     abort(404);
-})->where('any', '^(?!api).*$'); // Excluir rutas que empiecen con 'api'
+})->where('path', '.*');
+
+// Todas las demás rutas que no sean /api/* o /up devuelven 404 JSON
+Route::fallback(function () {
+    return response()->json([
+        'error' => 'Not Found',
+        'message' => 'Esta es una API REST. Las rutas de la API están en /api/*',
+        'endpoints' => [
+            'health' => '/up',
+            'api' => '/api',
+            'login' => '/api/auth/login',
+            'documents' => '/api/documents',
+        ],
+        'note' => 'El frontend se ejecuta en http://localhost:4200'
+    ], 404);
+});
