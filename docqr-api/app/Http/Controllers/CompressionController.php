@@ -27,17 +27,14 @@ class CompressionController extends Controller
             $monthsBack = (int) $request->input('months', 6);
             $cutoffDate = Carbon::now()->subMonths($monthsBack)->startOfMonth();
 
-            // Obtener documentos completados agrupados por mes y tipo
             $documents = QrFile::where('status', 'completed')
                 ->where('created_at', '<', $cutoffDate)
                 ->where('archived', false)
                 ->whereNotNull('final_path')
                 ->get();
 
-            // Agrupar por mes y tipo
             $grouped = [];
             foreach ($documents as $doc) {
-                // Extraer mes del nombre del archivo o de created_at
                 $filename = basename($doc->final_path);
                 $monthYear = Carbon::parse($doc->created_at)->format('Ym');
                 
@@ -45,16 +42,12 @@ class CompressionController extends Controller
                     $monthYear = $matches[1];
                 }
 
-                // Extraer tipo de la nueva estructura: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
-                // O estructura antigua: final/{TIPO}/documento.pdf
                 $pathParts = explode('/', $doc->final_path);
                 $type = 'OTROS';
                 if (count($pathParts) >= 2) {
                     $type = strtoupper($pathParts[1] ?? 'OTROS');
-                    // Si pathParts[2] es un año/mes (6 dígitos), es nueva estructura
-                    // En nueva estructura, el mes está en pathParts[2]
                     if (count($pathParts) >= 3 && preg_match('/^(\d{6})$/', $pathParts[2] ?? '', $matches)) {
-                        $monthYear = $matches[1]; // Ya extraído arriba, pero confirmar
+                        $monthYear = $matches[1];
                     }
                 }
 
@@ -83,7 +76,6 @@ class CompressionController extends Controller
                 ];
             }
 
-            // Convertir a array indexado
             $result = array_values($grouped);
 
             return response()->json([
@@ -126,17 +118,14 @@ class CompressionController extends Controller
             $type = $request->input('type');
             $monthYear = $request->input('month');
 
-            // Buscar documentos del tipo y mes especificados
             $documents = QrFile::where('status', 'completed')
                 ->where('archived', false)
                 ->whereNotNull('final_path')
                 ->get()
                 ->filter(function ($doc) use ($type, $monthYear) {
-                    // Verificar tipo
                     $pathParts = explode('/', $doc->final_path);
                     $docType = count($pathParts) >= 2 ? strtoupper($pathParts[1]) : 'OTROS';
                     
-                    // Verificar mes
                     $filename = basename($doc->final_path);
                     $docMonth = Carbon::parse($doc->created_at)->format('Ym');
                     if (preg_match('/-(\d{6})-\w+-/', $filename, $matches)) {
@@ -153,11 +142,9 @@ class CompressionController extends Controller
                 ], 404);
             }
 
-            // Comprimir
             $result = $this->compressDocuments($type, $monthYear, $documents->toArray());
 
             if ($result['success']) {
-                // Marcar como archivados
                 foreach ($documents as $doc) {
                     $doc->update([
                         'archived' => true,
@@ -249,7 +236,6 @@ class CompressionController extends Controller
                 $doc = QrFile::find($docData['id']);
                 if (!$doc) continue;
 
-                // Agregar PDF final
                 if ($doc->final_path) {
                     $finalPath = str_replace('final/', '', $doc->final_path);
                     $fullPath = Storage::disk('final')->path($finalPath);
@@ -261,7 +247,6 @@ class CompressionController extends Controller
                     }
                 }
 
-                // Agregar QR
                 if ($doc->qr_path) {
                     $qrPath = Storage::disk('qrcodes')->path(basename($doc->qr_path));
                     if (file_exists($qrPath)) {
@@ -277,7 +262,6 @@ class CompressionController extends Controller
                 return ['success' => false, 'error' => 'No se agregaron archivos al ZIP'];
             }
 
-            // Eliminar PDFs finales originales
             foreach ($documents as $docData) {
                 $doc = QrFile::find($docData['id']);
                 if ($doc && $doc->final_path) {

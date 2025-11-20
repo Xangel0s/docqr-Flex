@@ -102,7 +102,6 @@ class FixFilePaths extends Command
 
     private function fixFilePath(QrFile $file, bool $dryRun): array
     {
-        // Si no tiene file_path, intentar buscarlo
         if (!$file->file_path) {
             $foundPath = $this->searchPdfFile($file);
             if ($foundPath) {
@@ -125,7 +124,6 @@ class FixFilePaths extends Command
             return ['status' => 'correcto'];
         }
 
-        // La ruta no es válida, buscar el archivo
         $foundPath = $this->searchPdfFile($file);
         if ($foundPath) {
             if (!$dryRun) {

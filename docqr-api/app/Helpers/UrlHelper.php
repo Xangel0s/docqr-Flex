@@ -25,16 +25,17 @@ class UrlHelper
      */
     public static function url(string $path, ?Request $request = null): string
     {
-        // Obtener request si no se proporciona
         if (!$request) {
             $request = request();
         }
 
-        // Si no hay request, usar la función url() estándar de Laravel
         if (!$request) {
             return url($path);
         }
 
+        // Si la ruta es de API, siempre usar el host del backend
+        $isApiRoute = str_starts_with($path, '/api/');
+        
         $protocol = 'http';
         $scheme = $request->getScheme();
         $forwardedProto = $request->header('X-Forwarded-Proto');
@@ -57,11 +58,46 @@ class UrlHelper
         }
         
         $host = null;
-        $frontendUrl = env('FRONTEND_URL');
         $useLocalhost = env('USE_LOCALHOST', false);
         
+        // Para rutas de API, siempre usar el host del backend
+        if ($isApiRoute) {
+            if ($useLocalhost && in_array(env('APP_ENV', 'production'), ['local', 'development'])) {
+                $host = 'localhost:8000';
+                $protocol = 'http';
+            } else {
+                // Usar el host del request actual (backend)
+                $host = $request->header('X-Forwarded-Host');
+                if (!$host) {
+                    $host = $request->getHost();
+                }
+                $host = preg_replace('/:\d+$/', '', $host);
+                
+                // Si estamos en desarrollo local, asegurar que use el puerto correcto
+                if (env('APP_ENV') === 'local' && ($host === 'localhost' || strpos($host, '127.0.0.1') !== false)) {
+                    $port = $request->getPort();
+                    if ($port && $port != 80 && $port != 443) {
+                        $host .= ':' . $port;
+                    } elseif (!$port || $port == 80) {
+                        $host .= ':8000';
+                    }
+                } else {
+                    $port = $request->getPort();
+                    if ($port && $port != 80 && $port != 443 && strpos($host, ':') === false) {
+                        $host .= ':' . $port;
+                    }
+                }
+            }
+            
+            $path = '/' . ltrim($path, '/');
+            return $protocol . '://' . $host . $path;
+        }
+        
+        // Para rutas no-API, usar la lógica original (frontend)
+        $frontendUrl = env('FRONTEND_URL');
+        
         if ($useLocalhost && in_array(env('APP_ENV', 'production'), ['local', 'development'])) {
-            $host = 'localhost:8000';
+            $host = 'localhost:4200';
             $protocol = 'http';
             $path = '/' . ltrim($path, '/');
             return $protocol . '://' . $host . $path;

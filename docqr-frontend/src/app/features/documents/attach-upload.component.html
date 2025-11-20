@@ -20,11 +20,21 @@
           <div class="flex items-center gap-3">
             <button 
               type="button"
-              routerLink="/documents"
-              [disabled]="isUploading"
-              class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium">
+              (click)="cancelAndReturn()"
+              [disabled]="isUploading || isSaving"
+              class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed">
               <span class="material-symbols-outlined text-lg mr-2 align-middle">close</span>
               Cancelar
+            </button>
+            
+            <button 
+              type="button"
+              (click)="saveAndFinish()"
+              [disabled]="!document?.pdf_url || isUploading || isSaving"
+              class="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95">
+              <span *ngIf="!isSaving" class="material-symbols-outlined text-lg mr-2 align-middle">save</span>
+              <span *ngIf="isSaving" class="material-symbols-outlined text-lg mr-2 align-middle animate-spin">sync</span>
+              {{ isSaving ? 'Guardando...' : 'Guardar y Finalizar' }}
             </button>
           </div>
         </div>
@@ -84,9 +94,10 @@
             <button
               type="button"
               (click)="copyQrUrl()"
-              class="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 font-medium active:scale-95 hover:shadow-md">
+              [disabled]="!document.qr_image_url"
+              class="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 hover:shadow-md">
               <span class="material-symbols-outlined transition-transform duration-200 hover:scale-110">content_copy</span>
-              Copiar URL del QR
+              Copiar QR
             </button>
             <button
               type="button"
@@ -100,7 +111,17 @@
 
           <!-- URL del QR -->
           <div class="mt-4 p-3 bg-gray-50 rounded-lg">
-            <p class="text-xs font-medium text-gray-500 mb-1">URL del QR</p>
+            <div class="flex items-center justify-between mb-1">
+              <p class="text-xs font-medium text-gray-500">URL del QR</p>
+              <button
+                type="button"
+                (click)="copyQrUrlToClipboard()"
+                [disabled]="!document.qr_url"
+                class="p-1.5 rounded-md hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Copiar URL">
+                <span class="material-symbols-outlined text-gray-600 text-base">content_copy</span>
+              </button>
+            </div>
             <p class="text-xs text-gray-700 break-all">{{ document.qr_url || 'No disponible' }}</p>
           </div>
         </div>
@@ -219,6 +240,7 @@
           </div>
         </div>
       </div>
+
     </main>
   </div>
 </div>

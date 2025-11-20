@@ -33,9 +33,11 @@ Route::get('/files/qr/{qrId}', [FileController::class, 'serveQr']); // Imagen QR
 
 // Rutas protegidas (requieren autenticación)
 Route::middleware([AuthMiddleware::class])->group(function () {
-    // Autenticación
-    Route::get('/auth/me', [AuthController::class, 'me']);
-    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    // Autenticación (con rate limiting más estricto)
+    Route::get('/auth/me', [AuthController::class, 'me'])->middleware('throttle:120,1');
+    Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('throttle:30,1');
+    Route::put('/auth/profile', [AuthController::class, 'updateProfile'])->middleware('throttle:60,1');
+    Route::put('/auth/password', [AuthController::class, 'updatePassword'])->middleware('throttle:10,1');
     
     // Ruta para subir PDF y generar QR
     Route::post('/upload', [UploadController::class, 'upload']);
@@ -46,9 +48,9 @@ Route::middleware([AuthMiddleware::class])->group(function () {
     // Ruta para recibir PDF modificado con pdf-lib (método iLovePDF)
     Route::put('/embed-pdf', [EmbedController::class, 'embedPdf']);
 
-    // Rutas para gestión de documentos
-    Route::get('/documents', [DocumentController::class, 'index']);
-    Route::get('/documents/stats', [DocumentController::class, 'stats']);
+    // Rutas para gestión de documentos (con rate limiting)
+    Route::get('/documents', [DocumentController::class, 'index'])->middleware('throttle:120,1');
+    Route::get('/documents/stats', [DocumentController::class, 'stats'])->middleware('throttle:60,1');
     Route::post('/documents/create', [DocumentController::class, 'create']); // Crear documento sin PDF
     Route::get('/documents/qr/{qrId}', [DocumentController::class, 'showByQrId']);
     Route::get('/documents/{id}', [DocumentController::class, 'show']);

@@ -17,8 +17,6 @@ export class AuthGuard implements CanActivate {
     route: ActivatedRouteSnapshot,
     state: RouterStateSnapshot
   ): Observable<boolean> | Promise<boolean> | boolean {
-    // Verificación rápida: si hay token, permitir acceso inmediato
-    // La verificación del servidor se hace en segundo plano
     if (this.authService.isAuthenticated()) {
       // Verificar sesión en el servidor (sin bloquear la navegación)
       // Solo si falla, redirigir a login
@@ -31,12 +29,12 @@ export class AuthGuard implements CanActivate {
           }
         },
         error: () => {
-          // Solo redirigir si hay error de red, no si el token es inválido
-          // (el token inválido se maneja en checkAuth)
+          // Solo redirigir si hay error de red, no si la sesión es inválida
+          // (la sesión inválida se maneja en checkAuth)
         }
       });
       
-      // Permitir acceso inmediato si hay token
+      // Permitir acceso inmediato si hay usuario guardado
       return true;
     } else {
       this.router.navigate(['/login']);

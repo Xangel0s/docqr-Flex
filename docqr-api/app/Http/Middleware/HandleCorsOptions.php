@@ -22,16 +22,10 @@ class HandleCorsOptions
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Obtener el origen de la petición
         $origin = $request->header('Origin');
-        
-        // Lista de orígenes permitidos (desde config o .env)
         $allowedOrigins = $this->getAllowedOrigins();
-        
-        // Verificar si el origen está permitido
         $isOriginAllowed = $this->isOriginAllowed($origin, $allowedOrigins);
         
-        // Si es una petición OPTIONS (preflight), responder inmediatamente con headers CORS
         if ($request->isMethod('OPTIONS')) {
             $allowedOrigin = $isOriginAllowed ? $origin : ($allowedOrigins[0] ?? '*');
             
@@ -41,22 +35,18 @@ class HandleCorsOptions
                 ->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin')
                 ->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag')
                 ->header('Access-Control-Max-Age', '86400')
-                ->header('Access-Control-Allow-Credentials', 'true'); // CRÍTICO: Permitir credenciales
+                ->header('Access-Control-Allow-Credentials', 'true');
         }
 
-        // Para todas las demás peticiones, procesar y agregar headers CORS a la respuesta
         $response = $next($request);
         
-        // Agregar headers CORS a la respuesta si el origen está permitido
         if ($isOriginAllowed && $origin) {
             $response->headers->set('Access-Control-Allow-Origin', $origin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
-            $response->headers->set('Access-Control-Allow-Credentials', 'true'); // CRÍTICO: Permitir credenciales
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
         } elseif (in_array('*', $allowedOrigins)) {
-            // NOTA: No se puede usar 'Access-Control-Allow-Credentials: true' con '*'
-            // Por seguridad, en este caso no enviamos el header de credentials
             $response->headers->set('Access-Control-Allow-Origin', '*');
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin');
@@ -71,7 +61,21 @@ class HandleCorsOptions
      */
     private function getAllowedOrigins(): array
     {
-        return config('cors.allowed_origins', []);
+        $env = env('APP_ENV', 'local');
+        
+        if ($env === 'production') {
+            $frontendUrl = env('FRONTEND_URL', 'https://docqr.geofal.com.pe');
+            $corsOrigins = env('CORS_ALLOWED_ORIGINS', $frontendUrl);
+            if ($corsOrigins) {
+                $origins = array_filter(explode(',', $corsOrigins));
+                if (!empty($origins)) {
+                    return $origins;
+                }
+            }
+            return [$frontendUrl];
+        }
+        
+        return ['http://localhost:4200', 'http://127.0.0.1:4200'];
     }
     
     /**
@@ -83,17 +87,14 @@ class HandleCorsOptions
             return false;
         }
         
-        // Si se permite cualquier origen
         if (in_array('*', $allowedOrigins)) {
             return true;
         }
         
-        // Verificar coincidencia exacta
         if (in_array($origin, $allowedOrigins)) {
             return true;
         }
         
-        // Verificar patrones (para ngrok, etc.)
         $patterns = config('cors.allowed_origins_patterns', []);
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $origin)) {

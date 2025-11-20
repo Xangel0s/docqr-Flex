@@ -16,25 +16,17 @@ export class AppComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    // Verificar autenticación al iniciar la aplicación (en segundo plano, sin bloquear)
     if (this.authService.isAuthenticated()) {
-      // Verificar en segundo plano sin bloquear la carga inicial
-      // Esto actualiza el usuario desde el servidor (incluyendo cambios de nombre)
       this.authService.checkAuth().subscribe({
         next: (response) => {
           if (!response.success) {
-            // Token inválido, redirigir a login solo si estamos en una ruta protegida
             if (this.router.url !== '/login') {
               this.router.navigate(['/login']);
             }
           }
-          // Si response.success es true, el usuario ya fue actualizado en checkAuth()
         },
         error: () => {
-          // Solo redirigir si hay error de red y no estamos en login
           if (this.router.url !== '/login') {
-            // No redirigir automáticamente por errores de red
-            // El guard manejará la autenticación
           }
         }
       });

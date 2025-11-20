@@ -30,20 +30,12 @@ class QrIdValidator
         // Validar longitud (8-32 caracteres para flexibilidad)
         $length = strlen($qrId);
         if ($length < 8 || $length > 32) {
-            Log::warning('qr_id con longitud inválida:', [
-                'qr_id' => $qrId,
-                'length' => $length
-            ]);
             return false;
         }
         
         // Validar que solo contenga caracteres alfanuméricos (letras y números)
         // Permitir también guiones y guiones bajos para compatibilidad
         if (!preg_match('/^[a-zA-Z0-9_-]+$/', $qrId)) {
-            Log::warning('qr_id con caracteres inválidos (posible inyección SQL):', [
-                'qr_id' => $qrId,
-                'sanitized' => preg_replace('/[^a-zA-Z0-9_-]/', '', $qrId)
-            ]);
             return false;
         }
         
@@ -62,16 +54,7 @@ class QrIdValidator
             return null;
         }
         
-        // Sanitizar removiendo caracteres peligrosos (aunque ya validamos)
         $sanitized = preg_replace('/[^a-zA-Z0-9_-]/', '', $qrId);
-        
-        // Verificar que la sanitización no cambió el valor
-        if ($sanitized !== $qrId) {
-            Log::warning('qr_id fue sanitizado (caracteres removidos):', [
-                'original' => $qrId,
-                'sanitized' => $sanitized
-            ]);
-        }
         
         return $sanitized;
     }

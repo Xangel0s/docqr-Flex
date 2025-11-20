@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
     /**
-     * Login de usuario usando Laravel Sanctum
+     * Login de usuario usando sesiones
      */
     public function login(Request $request): JsonResponse
     {
@@ -21,8 +22,9 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Buscar usuario activo por username
-            $user = User::where('username', $request->username)
+            // Optimizar query: seleccionar solo campos necesarios y usar índice
+            $user = User::select(['id', 'username', 'name', 'email', 'password', 'role', 'is_active'])
+                ->where('username', $request->username)
                 ->where('is_active', true)
                 ->first();
 
@@ -41,18 +43,7 @@ class AuthController extends Controller
                 ], 401);
             }
 
-            // Borrar tokens anteriores para no acumular basura
-            $user->tokens()->delete();
-
-            // Crear nuevo token con Sanctum
-            $token = $user->createToken('auth_token')->plainTextToken;
-
-            Log::info('Usuario autenticado con Sanctum', [
-                'user_id' => $user->id,
-                'username' => $user->username
-            ]);
-
-            // Retornar respuesta compatible con el frontend existente
+            Auth::login($user);
             return response()->json([
                 'success' => true,
                 'message' => 'Login exitoso',
@@ -63,10 +54,7 @@ class AuthController extends Controller
                         'name' => $user->name,
                         'email' => $user->email,
                         'role' => $user->role,
-                    ],
-                    'token' => $token,
-                    // También incluir access_token para compatibilidad
-                    'access_token' => $token,
+                    ]
                 ]
             ], 200);
 
@@ -84,18 +72,18 @@ class AuthController extends Controller
     }
 
     /**
-     * Obtener usuario actual autenticado (usando Sanctum)
+     * Obtener usuario actual autenticado (usando sesión)
      */
     public function me(Request $request): JsonResponse
     {
         try {
-            // Sanctum automáticamente autentica el usuario desde el token
-            $user = $request->user();
+            // Obtener usuario de la sesión
+            $user = Auth::user();
 
             if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Token inválido o usuario no autenticado'
+                    'message' => 'Usuario no autenticado'
                 ], 401);
             }
 
@@ -132,23 +120,17 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout - Eliminar token actual usando Sanctum
+     * Logout - Cerrar sesión
      */
     public function logout(Request $request): JsonResponse
     {
         try {
-            // Obtener usuario autenticado
-            $user = $request->user();
-        
-            if ($user) {
-                // Eliminar el token actual
-                $user->currentAccessToken()->delete();
+            $user = Auth::user();
+            Auth::logout();
 
-                Log::info('Usuario cerró sesión', [
-                    'user_id' => $user->id,
-                    'username' => $user->username
-                ]);
-            }
+            // Invalidar la sesión
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
 
             return response()->json([
                 'success' => true,
@@ -160,6 +142,114 @@ class AuthController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cerrar sesión'
+            ], 500);
+        }
+    }
+
+    /**
+     * Actualizar perfil del usuario
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autenticado'
+                ], 401);
+            }
+
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'nullable|email|max:255',
+            ]);
+
+            $user->name = $request->input('name');
+            if ($request->has('email')) {
+                $user->email = $request->input('email');
+            }
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Perfil actualizado exitosamente',
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'username' => $user->username,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar perfil: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar el perfil'
+            ], 500);
+        }
+    }
+
+    /**
+     * Cambiar contraseña del usuario
+     */
+    public function updatePassword(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Usuario no autenticado'
+                ], 401);
+            }
+
+            $request->validate([
+                'current_password' => 'required|string',
+                'new_password' => 'required|string|min:6',
+                'confirm_password' => 'required|string|same:new_password',
+            ]);
+
+            // Verificar contraseña actual
+            if (!Hash::check($request->input('current_password'), $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La contraseña actual es incorrecta'
+                ], 422);
+            }
+
+            // Actualizar contraseña
+            $user->password = Hash::make($request->input('new_password'));
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contraseña actualizada exitosamente'
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar contraseña: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar la contraseña'
             ], 500);
         }
     }

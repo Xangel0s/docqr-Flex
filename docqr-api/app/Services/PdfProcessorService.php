@@ -27,6 +27,10 @@ class PdfProcessorService
     public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null, ?string $documentTitle = null, ?string $folderName = null): string
     {
         try {
+            // Aumentar límites para PDFs grandes (hasta 500MB)
+            ini_set('memory_limit', '1024M'); // 1GB para PDFs muy grandes
+            set_time_limit(600); // 10 minutos para PDFs grandes para PDFs grandes
+            
             // Crear instancia de FPDI
             $pdf = new Fpdi();
             
@@ -75,10 +79,6 @@ class PdfProcessorService
                 if (stripos($errorMsg, 'password') !== false || 
                     stripos($errorMsg, 'encrypted') !== false ||
                     stripos($errorMsg, 'protected') !== false) {
-                    Log::warning('PDF protegido con contraseña detectado:', [
-                        'pdf_path' => $pdfPath,
-                        'error' => $errorMsg
-                    ]);
                     throw new \Exception("El PDF está protegido con contraseña. No se puede procesar automáticamente. Por favor, desbloquee el PDF antes de subirlo.");
                 }
                 // Re-lanzar si es otro tipo de error
@@ -132,74 +132,32 @@ class PdfProcessorService
                 $width = round($width, 2);
                 $height = round($height, 2);
             }
-            
-            // Log solo en desarrollo
-            if (config('app.env') !== 'production') {
-                Log::info('Conversión de coordenadas (método porcentajes):', [
-                    'coordenadas_estandar' => $position,
-                    'porcentajes' => [
-                        'x' => $xPercent * 100 . '%',
-                        'y' => $yPercent * 100 . '%',
-                        'width' => $widthPercent * 100 . '%',
-                        'height' => $heightPercent * 100 . '%'
-                    ],
-                    'coordenadas_convertidas' => [
-                        'x' => $x,
-                        'y' => $y,
-                        'width' => $width,
-                        'height' => $height
-                    ],
-                    'dimensiones_pdf' => [
-                        'width' => $pageWidth,
-                        'height' => $pageHeight,
-                        'unidad' => $isInMm ? 'mm' : 'puntos'
-                    ]
-                ]);
-            }
 
-            // MARGEN INVISIBLE (área segura) - Configurable (0px = libertad total)
-            // 0px desde todos los bordes = libertad total para colocar el QR
-            // Convertir el margen de 0px del espacio estándar (595x842) al espacio real del PDF
-            $SAFE_MARGIN_STANDARD = 0; // 0px en el espacio estándar = libertad total
+            $SAFE_MARGIN_STANDARD = 0;
             $safeMarginX = ($SAFE_MARGIN_STANDARD * $pageWidth) / 595.0;
             $safeMarginY = ($SAFE_MARGIN_STANDARD * $pageHeight) / 842.0;
             
-            // VALIDACIÓN SIMPLE: Solo verificar que esté dentro del PDF (sin margen si SAFE_MARGIN = 0)
-            // NO mover, NO ajustar, solo validar y rechazar si está fuera
-            // El frontend ya controla el límite visual
-            // El backend solo previene la creación de páginas adicionales
+            // Tolerancia para errores de redondeo (0.1 puntos/mm)
+            $tolerance = 0.1;
+            
             $qrBottom = $y + $height;
             $qrRight = $x + $width;
             
-            // Validar que el QR esté completamente dentro del PDF (con margen opcional)
-            if ($x < $safeMarginX || $y < $safeMarginY || 
-                $qrRight > $pageWidth - $safeMarginX || 
-                $qrBottom > $pageHeight - $safeMarginY) {
+            // Validar con tolerancia para evitar falsos positivos por errores de redondeo
+            if ($x < $safeMarginX - $tolerance || $y < $safeMarginY - $tolerance || 
+                $qrRight > $pageWidth - $safeMarginX + $tolerance || 
+                $qrBottom > $pageHeight - $safeMarginY + $tolerance) {
                 if ($SAFE_MARGIN_STANDARD > 0) {
-                    Log::warning('QR fuera del área segura - Rechazado (NO se moverá):', [
-                        'coordenadas_recibidas' => ['x' => $x, 'y' => $y, 'width' => $width, 'height' => $height],
-                        'qrBottom' => $qrBottom, 'qrRight' => $qrRight,
-                        'pageWidth' => $pageWidth, 'pageHeight' => $pageHeight,
-                        'safeMarginX' => $safeMarginX, 'safeMarginY' => $safeMarginY
-                    ]);
                     throw new \Exception("El QR está fuera del área segura. Ajusta la posición en el editor.");
                 } else {
-                    // Con margen 0, solo validar que esté dentro del PDF
-                    if ($x < 0 || $y < 0 || $qrRight > $pageWidth || $qrBottom > $pageHeight) {
-                        Log::warning('QR fuera del PDF - Rechazado:', [
-                            'coordenadas_recibidas' => ['x' => $x, 'y' => $y, 'width' => $width, 'height' => $height],
-                            'qrBottom' => $qrBottom, 'qrRight' => $qrRight,
-                            'pageWidth' => $pageWidth, 'pageHeight' => $pageHeight
-                        ]);
+                    // Con SAFE_MARGIN = 0, permitir que esté exactamente en los bordes (con tolerancia)
+                    if ($x < -$tolerance || $y < -$tolerance || 
+                        $qrRight > $pageWidth + $tolerance || 
+                        $qrBottom > $pageHeight + $tolerance) {
                         throw new \Exception("El QR está fuera del área del PDF. Ajusta la posición en el editor.");
                     }
                 }
             }
-            
-            // Si está dentro del área segura, usar las coordenadas EXACTAS sin modificar
-            // El QR se colocará exactamente donde el usuario lo posicionó
-
-            // CRÍTICO: Deshabilitar auto page break para evitar páginas adicionales
             // TCPDF puede crear páginas automáticamente si detecta contenido cerca del borde
             $pdf->SetAutoPageBreak(false, 0);
             
@@ -207,117 +165,23 @@ class PdfProcessorService
             // No crear páginas adicionales bajo ninguna circunstancia
             $pdf->AddPage($size['orientation'], [$pageWidth, $pageHeight]);
             
-            // Log solo en desarrollo
-            if (config('app.env') !== 'production') {
-                Log::info('Página agregada al PDF:', [
-                    'orientation' => $size['orientation'],
-                    'dimensions' => [$pageWidth, $pageHeight],
-                    'page_count_before' => $pdf->getNumPages(),
-                    'auto_page_break_disabled' => true
-                ]);
-            }
-            
             // Usar la plantilla de la página original
             $pdf->useTemplate($tplId, 0, 0, $pageWidth, $pageHeight, true);
             
-            // Verificar inmediatamente después de usar la plantilla que solo hay 1 página
             $pageCountAfterTemplate = $pdf->getNumPages();
             if ($pageCountAfterTemplate > 1) {
                 Log::error('ERROR: Se crearon páginas adicionales después de useTemplate', [
                     'page_count' => $pageCountAfterTemplate
                 ]);
-                // Eliminar páginas adicionales si las hay
                 while ($pdf->getNumPages() > 1) {
                     $pdf->deletePage($pdf->getNumPages());
                 }
             }
 
-            // Insertar el QR en las coordenadas especificadas
-            // IMPORTANTE: TCPDF Image() usa Y desde ARRIBA (top-left origin), NO desde abajo
-            // El frontend también envía Y desde arriba, así que NO necesitamos invertir
-            // Solo usamos directamente las coordenadas convertidas por porcentajes
-            // Las coordenadas $x y $y ya están calculadas usando porcentajes puros:
-            // xPercent * pageWidth, yPercent * pageHeight
-            // Esto garantiza que la posición relativa sea exacta sin importar el tamaño del PDF
-            $pdfY = $y; // Usar Y directamente (ya está en mm o puntos, desde arriba)
+            $pdfY = $y;
+            $x = $x + 15;
+            $pdfY = $pdfY + 15;
             
-            // NOTA IMPORTANTE SOBRE CALIBRACIÓN:
-            // Después de múltiples pruebas y ajustes, se determinó que existe una discrepancia
-            // constante entre el sistema de coordenadas del canvas web (Fabric.js) y el del PDF físico (TCPDF).
-            // Aunque la conversión por porcentajes es matemáticamente correcta, hay un desplazamiento visual
-            // que requiere un offset de calibración manual. Este offset fue determinado empíricamente
-            // mediante pruebas exhaustivas y se estableció en +15 unidades para X e Y.
-            // 
-            // Si en el futuro se necesita recalibrar:
-            // 1. Colocar el QR en una posición conocida en el editor (ej: esquina superior derecha)
-            // 2. Guardar y descargar el PDF
-            // 3. Comparar la posición visual en el PDF vs el editor
-            // 4. Ajustar los valores de offset (+15) hasta lograr alineación perfecta
-            //
-            // ACTUALMENTE DESHABILITADO: El offset manual fue removido para usar solo porcentajes puros.
-            // Si el desplazamiento persiste en producción, descomentar las siguientes líneas:
-            // $x = $x + 15;      // Offset de calibración X (mover a la derecha)
-            // $pdfY = $pdfY + 15; // Offset de calibración Y (mover hacia abajo) - CRÍTICO: usar $pdfY
-            
-            // APLICAR OFFSET DE CALIBRACIÓN (ACTIVADO PARA PRODUCCIÓN)
-            // Este offset corrige la discrepancia visual entre el editor y el PDF final
-            $x = $x + 15;      // Offset de calibración X (mover a la derecha)
-            $pdfY = $pdfY + 15; // Offset de calibración Y (mover hacia abajo) - CRÍTICO: usar $pdfY
-            
-            // Log detallado para debugging - VERIFICAR CONVERSIÓN EXACTA (solo en desarrollo)
-            if (config('app.env') !== 'production') {
-                Log::info('=== INSERTANDO QR EN PDF (CONVERSIÓN DETALLADA) ===', [
-                'coordenadas_recibidas_estandar' => [
-                    'x' => $position['x'],
-                    'y' => $position['y'],
-                    'width' => $position['width'],
-                    'height' => $position['height']
-                ],
-                'dimensiones_pdf_real' => [
-                    'width' => $pageWidth,
-                    'height' => $pageHeight,
-                    'unidad' => $isInMm ? 'mm' : 'puntos',
-                    'es_estandar' => ($pageWidth == 595 && $pageHeight == 842) || 
-                                    ($pageWidth == 210 && $pageHeight == 297) // A4 estándar
-                ],
-                'factores_conversion' => [
-                    'scaleX' => $isInMm ? ($pageWidth / 595.0) : ($pageWidth / 595.0),
-                    'scaleY' => $isInMm ? ($pageHeight / 842.0) : ($pageHeight / 842.0),
-                    'formula_x' => "({$position['x']} * {$pageWidth}) / 595.0 = " . (($position['x'] * $pageWidth) / 595.0),
-                    'formula_y' => "({$position['y']} * {$pageHeight}) / 842.0 = " . (($position['y'] * $pageHeight) / 842.0)
-                ],
-                'coordenadas_convertidas' => [
-                    'x' => $x,
-                    'y' => $y,
-                    'width' => $width,
-                    'height' => $height,
-                    'x_antes_redondeo' => ($position['x'] * $pageWidth) / 595.0,
-                    'y_antes_redondeo' => ($position['y'] * $pageHeight) / 842.0
-                ],
-                'coordenadas_finales_tcpdf' => [
-                    'x' => $x,
-                    'y' => $pdfY,
-                    'width' => $width,
-                    'height' => $height,
-                    'qr_bottom' => $pdfY + $height,
-                    'qr_right' => $x + $width
-                ],
-                'verificacion_posicion' => [
-                    'x_porcentaje' => ($x / $pageWidth) * 100 . '%',
-                    'y_porcentaje' => ($pdfY / $pageHeight) * 100 . '%',
-                    'x_estandar_porcentaje' => ($position['x'] / 595) * 100 . '%',
-                    'y_estandar_porcentaje' => ($position['y'] / 842) * 100 . '%',
-                    'coinciden_porcentajes' => abs((($x / $pageWidth) * 100) - (($position['x'] / 595) * 100)) < 0.1 &&
-                                              abs((($pdfY / $pageHeight) * 100) - (($position['y'] / 842) * 100)) < 0.1
-                ],
-                'qr_path' => $fullQrPath,
-                'qr_exists' => file_exists($fullQrPath),
-                'note' => 'TCPDF Image() usa Y desde arriba (top-left origin) - NO se invierte Y'
-                ]);
-            }
-            
-            // Verificar que el QR esté completamente dentro de los límites antes de insertar
-            // Validación final ABSOLUTA: el QR DEBE estar dentro con margen de seguridad
             $qrBottom = $pdfY + $height;
             $qrRight = $x + $width;
             
@@ -354,14 +218,13 @@ class PdfProcessorService
             $finalHeight = $width; // Forzar igual a width (cuadrado perfecto)
             
             $pdf->Image(
-                $fullQrPath,  // Archivo
-                $x,            // X (desde izquierda, con offset de calibración +15)
-                $pdfY,         // Y (desde arriba, con offset de calibración +15) - CRÍTICO: usar $pdfY
-                $finalWidth,   // Ancho (forzado a cuadrado)
-                $finalHeight   // Alto (igual a width para mantener cuadrado)
+                $fullQrPath,
+                $x,
+                $pdfY,
+                $finalWidth,
+                $finalHeight
             );
             
-            // Verificar inmediatamente después de insertar el QR que solo hay 1 página
             $pageCountAfterImage = $pdf->getNumPages();
             if ($pageCountAfterImage > 1) {
                 Log::error('ERROR CRÍTICO: Se crearon páginas adicionales después de Image()', [
@@ -373,14 +236,6 @@ class PdfProcessorService
                 while ($pdf->getNumPages() > 1) {
                     $pdf->deletePage($pdf->getNumPages());
                 }
-                Log::warning('Páginas adicionales eliminadas después de Image()');
-            }
-            
-            // Log solo en desarrollo
-            if (config('app.env') !== 'production') {
-                Log::info('QR insertado exitosamente en PDF', [
-                    'page_count_after_insert' => $pdf->getNumPages()
-                ]);
             }
 
             // NUEVA ESTRUCTURA OPTIMIZADA: Organizar PDF final igual que original
@@ -390,10 +245,8 @@ class PdfProcessorService
             $monthYear = now()->format('Ym'); // Por defecto, mes actual
             $qrIdFromPath = $qrId ?? ''; // Usar qr_id pasado como parámetro o extraer de ruta
             
-            // Detectar estructura: nueva (uploads/CE/202511/{qr_id}/) o antigua (uploads/CE/CE-12345/)
             $isNewStructure = false;
             
-            // Nueva estructura: uploads/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
             if (count($pathParts) >= 4) {
                 // pathParts[0] = "uploads", pathParts[1] = "CE", pathParts[2] = "202511", pathParts[3] = "{qr_id}"
                 if (in_array(strtoupper($pathParts[1] ?? ''), ['CE', 'IN', 'SU'])) {
@@ -422,24 +275,18 @@ class PdfProcessorService
                 }
             }
             
-            // Si no tenemos qr_id, intentar extraerlo del nombre del archivo (estructura antigua)
             if (empty($qrIdFromPath)) {
                 $originalBasename = basename($pdfPath);
-                // Intentar extraer de formato antiguo: 202511-{qr_id}-documento.pdf
                 if (preg_match('/^\d{6}-([a-zA-Z0-9]{32})-/', $originalBasename, $matches)) {
                     $qrIdFromPath = $matches[1];
                 } else {
-                    // Fallback: usar timestamp como identificador único
                     $qrIdFromPath = 'legacy-' . time();
                 }
             }
             
-            // Nombre del archivo final (sin prefijos)
             $originalBasename = basename($pdfPath);
-            // Si el nombre tiene prefijo de estructura antigua, limpiarlo
             $finalFilename = preg_replace('/^\d{6}-[a-zA-Z0-9]{32}-/', '', $originalBasename);
             if ($finalFilename === $originalBasename) {
-                // Si no tenía prefijo, usar el nombre original
                 $finalFilename = $originalBasename;
             }
             
@@ -462,7 +309,6 @@ class PdfProcessorService
                 throw new \Exception("Error: El PDF generado tiene {$finalPageCount} páginas. El QR debe estar más arriba.");
             }
             
-            // Guardar el PDF final
             $pdf->Output($fullFinalPath, 'F');
             
             // Verificar que el PDF guardado tenga solo 1 página
@@ -476,10 +322,6 @@ class PdfProcessorService
                 throw new \Exception("Error: El PDF guardado tiene {$verifyPageCount} páginas.");
             }
             
-            Log::info('PDF guardado correctamente con 1 página', [
-                'page_count' => $verifyPageCount,
-                'final_path' => $finalPath
-            ]);
 
             return $finalPath;
 
@@ -528,13 +370,11 @@ class PdfProcessorService
             }
             
             if (!file_exists($fullPdfPath)) {
-                Log::warning("PDF no encontrado para validación: {$fullPdfPath}");
                 return false;
             }
 
             $pageCount = $pdf->setSourceFile($fullPdfPath);
             if ($pageCount === 0) {
-                Log::warning("PDF sin páginas para validación: {$fullPdfPath}");
                 return false;
             }
             
@@ -544,60 +384,33 @@ class PdfProcessorService
             $pageWidth = $size['width'];
             $pageHeight = $size['height'];
 
-            Log::info('Validando posición del QR:', [
-                'pdf_path' => $pdfPath,
-                'page_width' => $pageWidth,
-                'page_height' => $pageHeight,
-                'position' => $position
-            ]);
 
-            // MARGEN INVISIBLE (área segura) - Como en iLovePDF
-            // 5px desde todos los bordes para evitar que el QR cause páginas adicionales
-            // El frontend envía coordenadas en el espacio estándar 595x842
-            // Reducido de 20px a 5px para permitir más flexibilidad cerca del footer
-            $SAFE_MARGIN = 5; // 5px de margen invisible (igual que en el frontend)
+            $SAFE_MARGIN = 5;
             
-            // Convertir dimensiones del PDF a píxeles (72 DPI) si están en mm
-            // Si las dimensiones son muy pequeñas (< 1000), asumimos que están en mm
             $pdfWidthPx = $pageWidth;
             $pdfHeightPx = $pageHeight;
             
             if ($pageWidth < 1000 && $pageHeight < 1000) {
-                // Están en mm, convertir a píxeles (1mm = 2.83465px a 72 DPI)
                 $pdfWidthPx = $pageWidth * 2.83465;
                 $pdfHeightPx = $pageHeight * 2.83465;
             }
             
-            // Convertir el margen invisible del espacio estándar (595x842) al espacio real del PDF
             $scaleX = $pdfWidthPx / 595.0;
             $scaleY = $pdfHeightPx / 842.0;
             $safeMarginX = $SAFE_MARGIN * $scaleX;
             $safeMarginY = $SAFE_MARGIN * $scaleY;
             
-            // Convertir posición del espacio estándar al espacio real del PDF
             $x = ($position['x'] * $pdfWidthPx) / 595.0;
             $y = ($position['y'] * $pdfHeightPx) / 842.0;
             $width = ($position['width'] * $pdfWidthPx) / 595.0;
             $height = ($position['height'] * $pdfHeightPx) / 842.0;
             
-            // Validar que el QR esté dentro del área segura (margen invisible)
             if ($x < $safeMarginX || $y < $safeMarginY || 
                 $x + $width > $pdfWidthPx - $safeMarginX || 
                 $y + $height > $pdfHeightPx - $safeMarginY) {
-                Log::warning('Posición del QR fuera del área segura (margen invisible)', [
-                    'position' => $position,
-                    'pdf_dimensions' => ['width' => $pdfWidthPx, 'height' => $pdfHeightPx],
-                    'safe_margin' => ['x' => $safeMarginX, 'y' => $safeMarginY],
-                    'calculated_position' => ['x' => $x, 'y' => $y, 'width' => $width, 'height' => $height]
-                ]);
                 return false;
             }
 
-            // La validación del margen invisible ya cubre todos los casos
-            // No necesitamos validaciones adicionales porque el margen invisible garantiza
-            // que el QR esté dentro del área segura y no cause páginas adicionales
-
-            Log::info('Posición del QR válida');
             return true;
 
         } catch (\Exception $e) {

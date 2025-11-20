@@ -6,27 +6,27 @@ import {
   HttpInterceptor
 } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { AuthService } from '../services/auth.service';
 
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
 
-  constructor(private authService: AuthService) {}
+  constructor() {}
 
   intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
-    const token = this.authService.getToken();
+    // Asegurar que todas las peticiones incluyan cookies (withCredentials)
+    // Esto es necesario para que las cookies de sesión se envíen automáticamente
+    // Excluir rutas públicas que no necesitan autenticación
     
-    // Agregar token a las peticiones (excepto login y rutas públicas)
-    if (token && !request.url.includes('/auth/login') && !request.url.includes('/view/') && !request.url.includes('/files/')) {
-      const clonedRequest = request.clone({
-        setHeaders: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      return next.handle(clonedRequest);
-    }
-
-    return next.handle(request);
+    const isPublicRoute = request.url.includes('/view/') || 
+                          request.url.includes('/files/') ||
+                          request.url.includes('/auth/login');
+    
+    const clonedRequest = request.clone({
+      setHeaders: {},
+      withCredentials: true // Importante: enviar cookies en todas las peticiones
+    });
+    
+    return next.handle(clonedRequest);
   }
 }
 

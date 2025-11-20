@@ -18,12 +18,7 @@ export interface LoginResponse {
   message: string;
   data: {
     user: User;
-    token?: string;
-    access_token?: string;
   };
-  // También puede venir a nivel raíz para compatibilidad
-  token?: string;
-  access_token?: string;
 }
 
 @Injectable({
@@ -31,7 +26,6 @@ export interface LoginResponse {
 })
 export class AuthService {
   private apiUrl: string;
-  private tokenKey = 'geofal_token';
   private userKey = 'geofal_user';
   
   private currentUserSubject = new BehaviorSubject<User | null>(this.getStoredUser());
@@ -41,57 +35,37 @@ export class AuthService {
     private http: HttpClient,
     private router: Router
   ) {
-    // Detectar si estamos en HTTPS (ngrok) y usar URL relativa para evitar Mixed Content
-    // Si apiUrl es absoluto y comienza con http://, y estamos en HTTPS, usar URL relativa
     let baseUrl = environment.apiUrl;
     
     if (baseUrl.startsWith('http://') && window.location.protocol === 'https:') {
-      // Usar URL relativa para evitar Mixed Content
       this.apiUrl = '/api';
     } else if (baseUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
-      // Si estamos en HTTPS pero apiUrl apunta a localhost HTTP, usar URL relativa
       this.apiUrl = '/api';
     } else {
-      // Asegurar que apiUrl termine con /api si no está presente
-      // Remover /api si ya está al final para evitar duplicación
       baseUrl = baseUrl.replace(/\/api\/?$/, '');
-      // Agregar /api al final
       this.apiUrl = `${baseUrl}/api`;
     }
   }
 
   /**
-   * Login de usuario
+   * Login de usuario (usa sesiones con cookies)
    */
   login(username: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${this.apiUrl}/auth/login`, {
       username,
       password
+    }, {
+      withCredentials: true // Importante: enviar cookies de sesión
     }).pipe(
       tap(response => {
-        // CRÍTICO: Guardar token y usuario de forma síncrona antes de que el next() se ejecute
-        // Esto asegura que cuando el componente verifique isAuthenticated(), el token ya esté guardado
-        if (response && response.success && response.data) {
-          // CORRECCIÓN: Usar access_token primero, luego token como fallback
-          // El backend envía access_token (Sanctum) pero también puede enviar token para compatibilidad
-          const token = response.data?.access_token || response.data?.token || response.access_token || response.token;
-          
-          if (token && typeof token === 'string' && token.length > 0) {
-            // Guardar inmediatamente de forma síncrona
-            try {
-              this.setToken(token);
-              if (response.data.user) {
-                this.setUser(response.data.user);
-                this.currentUserSubject.next(response.data.user);
-              }
-            } catch (error) {
-              if (!environment.production) {
-                console.error('Error al guardar token en localStorage:', error);
-              }
-            }
-          } else {
+        // Guardar usuario de forma síncrona
+        if (response && response.success && response.data && response.data.user) {
+          try {
+            this.setUser(response.data.user);
+            this.currentUserSubject.next(response.data.user);
+          } catch (error) {
             if (!environment.production) {
-              console.error('No se recibió token válido en la respuesta del login:', response);
+              console.error('Error al guardar usuario:', error);
             }
           }
         } else {
@@ -113,25 +87,25 @@ export class AuthService {
    * Logout
    */
   logout(): void {
-    this.removeToken();
-    this.removeUser();
-    this.currentUserSubject.next(null);
-    this.router.navigate(['/login']);
+    // Llamar al endpoint de logout para cerrar sesión en el servidor
+    this.http.post(`${this.apiUrl}/auth/logout`, {}, {
+      withCredentials: true
+    }).pipe(
+      catchError(() => of(null)) // Ignorar errores en logout
+    ).subscribe(() => {
+      this.removeUser();
+      this.currentUserSubject.next(null);
+      this.router.navigate(['/login']);
+    });
   }
 
   /**
    * Verificar si el usuario está autenticado
+   * Verifica si hay un usuario guardado localmente (la sesión real se verifica en checkAuth)
    */
   isAuthenticated(): boolean {
-    const token = this.getToken();
-    return !!token;
-  }
-
-  /**
-   * Obtener token actual
-   */
-  getToken(): string | null {
-    return localStorage.getItem(this.tokenKey);
+    const user = this.getStoredUser();
+    return !!user;
   }
 
   /**
@@ -146,28 +120,26 @@ export class AuthService {
    * No hace logout automático en caso de error de red para evitar interrupciones
    */
   checkAuth(): Observable<{ success: boolean; data?: { user: User } }> {
-    const token = this.getToken();
-    if (!token) {
-      return of({ success: false });
-    }
-
-    return this.http.get<{ success: boolean; data?: { user: User } }>(`${this.apiUrl}/auth/me`).pipe(
+    return this.http.get<{ success: boolean; data?: { user: User } }>(`${this.apiUrl}/auth/me`, {
+      withCredentials: true // Importante: enviar cookies de sesión
+    }).pipe(
       tap(response => {
-        if (response.success && response.data) {
+        if (response.success && response.data && response.data.user) {
           // Actualizar usuario en caché (localStorage y BehaviorSubject)
           this.setUser(response.data.user);
           this.currentUserSubject.next(response.data.user);
         } else {
-          // Solo hacer logout si el servidor dice explícitamente que el token es inválido
-          // No hacer logout por errores de red
-          this.logout();
+          // Solo hacer logout si el servidor dice explícitamente que no hay sesión
+          this.removeUser();
+          this.currentUserSubject.next(null);
         }
       }),
       catchError((error) => {
         // Solo hacer logout si es un error 401 (no autorizado)
         // Errores de red (0, timeout, etc.) no deben causar logout
         if (error.status === 401) {
-          this.logout();
+          this.removeUser();
+          this.currentUserSubject.next(null);
         }
         // Retornar success: false pero no hacer logout automático
         return of({ success: false });
@@ -184,30 +156,32 @@ export class AuthService {
   }
 
   /**
-   * Guardar token
+   * Actualizar perfil del usuario
    */
-  private setToken(token: string): void {
-    try {
-      if (token && typeof token === 'string' && token.length > 0) {
-        localStorage.setItem(this.tokenKey, token);
-        // Verificar que se guardó correctamente
-        const savedToken = localStorage.getItem(this.tokenKey);
-        if (savedToken !== token) {
-          if (!environment.production) {
-            console.error('Error: El token no se guardó correctamente en localStorage');
-          }
+  updateProfile(name: string, email?: string): Observable<{ success: boolean; message: string; data?: { user: User } }> {
+    return this.http.put<{ success: boolean; message: string; data?: { user: User } }>(
+      `${this.apiUrl}/auth/profile`,
+      { name, email },
+      { withCredentials: true }
+    ).pipe(
+      tap(response => {
+        if (response.success && response.data && response.data.user) {
+          this.setUser(response.data.user);
+          this.currentUserSubject.next(response.data.user);
         }
-      } else {
-        if (!environment.production) {
-          console.error('Error: Intento de guardar token inválido:', token);
-        }
-      }
-    } catch (error) {
-      if (!environment.production) {
-        console.error('Error al guardar token en localStorage:', error);
-      }
-      throw error;
-    }
+      })
+    );
+  }
+
+  /**
+   * Cambiar contraseña del usuario
+   */
+  updatePassword(currentPassword: string, newPassword: string, confirmPassword: string): Observable<{ success: boolean; message: string }> {
+    return this.http.put<{ success: boolean; message: string }>(
+      `${this.apiUrl}/auth/password`,
+      { current_password: currentPassword, new_password: newPassword, confirm_password: confirmPassword },
+      { withCredentials: true }
+    );
   }
 
   /**
@@ -233,17 +207,9 @@ export class AuthService {
   }
 
   /**
-   * Eliminar token
-   */
-  private removeToken(): void {
-    localStorage.removeItem(this.tokenKey);
-  }
-
-  /**
    * Eliminar usuario
    */
   private removeUser(): void {
     localStorage.removeItem(this.userKey);
   }
 }
-

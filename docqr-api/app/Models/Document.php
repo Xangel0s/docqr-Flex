@@ -99,12 +99,10 @@ class Document extends Model
      */
     public function getQrIdAttribute(): string
     {
-        // Si existe relación con qr_files, usar ese qr_id
         if ($this->qrFile) {
             return $this->qrFile->qr_id;
         }
         
-        // Si no, usar password_file como qr_id (compatibilidad con BD antigua)
         return $this->password_file ?? '';
     }
 

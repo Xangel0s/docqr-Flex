@@ -49,7 +49,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    // Los gráficos se crearán después de cargar los datos
   }
 
   ngOnDestroy(): void {

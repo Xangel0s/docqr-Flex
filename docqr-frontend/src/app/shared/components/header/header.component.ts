@@ -52,8 +52,6 @@ export class HeaderComponent implements OnInit, OnDestroy {
     if (this.authService.isAuthenticated()) {
       this.authService.refreshUser().subscribe({
         next: (response) => {
-          // El usuario ya fue actualizado en refreshUser() -> checkAuth()
-          // El BehaviorSubject notificará automáticamente a los suscriptores (header)
         },
         error: () => {
           // Error silencioso - no interrumpir la experiencia del usuario

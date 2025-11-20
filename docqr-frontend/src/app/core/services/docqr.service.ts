@@ -110,21 +110,14 @@ export class DocqrService {
   private apiUrl: string;
 
   constructor(private http: HttpClient) {
-    // Detectar si estamos en HTTPS (ngrok) y usar URL relativa para evitar Mixed Content
-    // Si apiUrl es absoluto y comienza con http://, y estamos en HTTPS, usar URL relativa
     let baseUrl = environment.apiUrl;
     
     if (baseUrl.startsWith('http://') && window.location.protocol === 'https:') {
-      // Usar URL relativa para evitar Mixed Content
       this.apiUrl = '/api';
     } else if (baseUrl.startsWith('http://localhost') && window.location.protocol === 'https:') {
-      // Si estamos en HTTPS pero apiUrl apunta a localhost HTTP, usar URL relativa
       this.apiUrl = '/api';
     } else {
-      // Asegurar que apiUrl termine con /api si no está presente
-      // Remover /api si ya está al final para evitar duplicación
       baseUrl = baseUrl.replace(/\/api\/?$/, '');
-      // Agregar /api al final
       this.apiUrl = `${baseUrl}/api`;
     }
   }
@@ -261,8 +254,24 @@ export class DocqrService {
       file_size: number;
     };
   }> {
+    // Validar que el archivo existe y tiene contenido
+    if (!file || file.size === 0) {
+      throw new Error('El archivo está vacío o no es válido');
+    }
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', file, file.name);
+
+    // Log para debugging (solo en desarrollo)
+    if (!environment.production) {
+      console.log('Enviando archivo:', {
+        name: file.name,
+        size: file.size,
+        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
+        type: file.type,
+        lastModified: new Date(file.lastModified).toISOString()
+      });
+    }
 
     return this.http.post<{
       success: boolean;
@@ -272,7 +281,10 @@ export class DocqrService {
         original_filename: string;
         file_size: number;
       };
-    }>(`${this.apiUrl}/documents/qr/${qrId}/attach-pdf`, formData);
+    }>(`${this.apiUrl}/documents/qr/${qrId}/attach-pdf`, formData, {
+      // No establecer Content-Type - dejar que el navegador lo establezca automáticamente con el boundary
+      // Esto es crítico para FormData multipart/form-data
+    });
   }
 
   /**

@@ -4,13 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\QrFile;
 use App\Services\QrGeneratorService;
+use App\Services\PdfValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use App\Helpers\CacheHelper;
 
 /**
  * Controlador para gestión de documentos
@@ -18,10 +21,12 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 class DocumentController extends Controller
 {
     protected $qrGenerator;
+    protected $pdfValidator;
 
-    public function __construct(QrGeneratorService $qrGenerator)
+    public function __construct(QrGeneratorService $qrGenerator, PdfValidationService $pdfValidator)
     {
         $this->qrGenerator = $qrGenerator;
+        $this->pdfValidator = $pdfValidator;
     }
     /**
      * Listar documentos con filtros y paginación
@@ -32,24 +37,37 @@ class DocumentController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = QrFile::query();
+            // CACHE DESHABILITADO: Para ver cambios en tiempo real
+            // Si necesitas reactivar el cache, descomenta las siguientes líneas:
+            // $cacheKey = 'documents_list_' . md5(json_encode($request->all()));
+            // if (!$request->has('search') && !$request->has('date_from') && !$request->has('date_to')) {
+            //     $cached = Cache::get($cacheKey);
+            //     if ($cached !== null) {
+            //         return response()->json($cached, 200);
+            //     }
+            // }
+            
+            // Seleccionar solo campos necesarios para mejorar rendimiento
+            // CRÍTICO: Excluir explícitamente documentos eliminados (soft delete)
+            // El modelo QrFile usa SoftDeletes, pero asegurémonos de excluirlos explícitamente
+            $query = QrFile::withoutTrashed()->select([
+                'id', 'qr_id', 'folder_name', 'original_filename', 'file_size',
+                'qr_position', 'status', 'scan_count', 'last_scanned_at',
+                'created_at', 'updated_at', 'final_path'
+            ]);
 
-            // Filtro por carpeta específica
             if ($request->has('folder') && $request->folder) {
                 $query->where('folder_name', $request->folder);
             }
 
-            // Filtro por tipo de documento (CE, IN, SU)
             if ($request->has('type') && $request->type && $request->type !== 'all') {
                 $query->where('folder_name', 'like', $request->type . '-%');
             }
 
-            // Filtro por estado
             if ($request->has('status') && $request->status && $request->status !== 'all') {
                 $query->where('status', $request->status);
             }
 
-            // Filtro por fecha (rango)
             if ($request->has('date_from') && $request->date_from) {
                 $query->whereDate('created_at', '>=', $request->date_from);
             }
@@ -57,7 +75,6 @@ class DocumentController extends Controller
                 $query->whereDate('created_at', '<=', $request->date_to);
             }
 
-            // Filtro por escaneos
             if ($request->has('scans_filter') && $request->scans_filter && $request->scans_filter !== 'all') {
                 switch ($request->scans_filter) {
                     case 'none':
@@ -69,7 +86,6 @@ class DocumentController extends Controller
                 }
             }
 
-            // Búsqueda por nombre de archivo o carpeta
             if ($request->has('search') && $request->search) {
                 $search = $request->search;
                 $query->where(function($q) use ($search) {
@@ -78,24 +94,19 @@ class DocumentController extends Controller
                 });
             }
 
-            // Ordenamiento
             $sortBy = $request->input('sort_by', 'created_at');
             $sortOrder = $request->input('sort_order', 'desc');
             
-            // Validar campos de ordenamiento
             $allowedSorts = ['created_at', 'original_filename', 'scan_count', 'folder_name'];
             if (!in_array($sortBy, $allowedSorts)) {
                 $sortBy = 'created_at';
             }
             
-            // Ordenar según el campo seleccionado
             $query->orderBy($sortBy, $sortOrder);
 
-            // Paginación
-            $perPage = $request->input('per_page', 15);
+            $perPage = min($request->input('per_page', 15), 100); // Limitar máximo a 100
             $documents = $query->paginate($perPage);
 
-            // Transformar documentos para incluir URLs
             $transformedDocuments = $documents->map(function ($document) {
                 return [
                     'id' => $document->id,
@@ -109,10 +120,9 @@ class DocumentController extends Controller
                     'last_scanned_at' => $document->last_scanned_at?->format('Y-m-d H:i:s'),
                     'created_at' => $document->created_at?->format('Y-m-d H:i:s'),
                     'updated_at' => $document->updated_at?->format('Y-m-d H:i:s'),
-                    // URLs generadas dinámicamente (respetan protocolo de solicitud actual)
                     'qr_url' => \App\Helpers\UrlHelper::url("/api/view/{$document->qr_id}", request()),
-                    'pdf_url' => \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request()), // PDF final (si existe) o original
-                    'pdf_original_url' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$document->qr_id}", request()), // Siempre PDF original (para editor)
+                    'pdf_url' => \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request()),
+                    'pdf_original_url' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$document->qr_id}", request()),
                     'qr_image_url' => \App\Helpers\UrlHelper::url("/api/files/qr/{$document->qr_id}", request()),
                     'final_pdf_url' => $document->final_path 
                         ? \App\Helpers\UrlHelper::url("/api/files/pdf/{$document->qr_id}", request())
@@ -120,7 +130,7 @@ class DocumentController extends Controller
                 ];
             });
 
-            return response()->json([
+            $response = [
                 'success' => true,
                 'data' => $transformedDocuments->values()->all(),
                 'meta' => [
@@ -129,7 +139,19 @@ class DocumentController extends Controller
                     'per_page' => $documents->perPage(),
                     'total' => $documents->total(),
                 ]
-            ], 200);
+            ];
+            
+            // CACHE DESHABILITADO para tiempo real
+            // if (!$request->has('search') && !$request->has('date_from') && !$request->has('date_to')) {
+            //     Cache::put($cacheKey, $response, 300);
+            // }
+
+            // Headers para evitar cache del navegador y forzar datos frescos
+            return response()->json($response, 200)
+                ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                ->header('Pragma', 'no-cache')
+                ->header('Expires', '0')
+                ->header('X-Content-Type-Options', 'nosniff');
 
         } catch (\Exception $e) {
             return response()->json([
@@ -190,16 +212,19 @@ class DocumentController extends Controller
     public function showByQrId(string $qrId): JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en showByQrId:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
                 ], 400);
             }
-            
-            $document = QrFile::where('qr_id', $qrId)->firstOrFail();
+
+            // CACHE DESHABILITADO: Para ver cambios en tiempo real
+            $document = QrFile::withoutTrashed()->select([
+                'id', 'qr_id', 'folder_name', 'original_filename', 'file_size',
+                'qr_position', 'status', 'scan_count', 'last_scanned_at',
+                'created_at', 'updated_at', 'final_path', 'file_path', 'qr_path'
+            ])->where('qr_id', $qrId)->firstOrFail();
 
             return response()->json([
                 'success' => true,
@@ -242,17 +267,13 @@ class DocumentController extends Controller
     public function updateFolderName(string $qrId, Request $request): JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en updateFolderName:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
                 ], 400);
             }
             
-            // Validar entrada
-            // Permitir caracteres en español (incluyendo Ñ, ñ, acentos) y caracteres alfanuméricos
             $request->validate([
                 'folder_name' => ['required', 'string', 'max:100', 'regex:/^(CE|IN|SU)-[A-Za-z0-9ÑñÁÉÍÓÚáéíóúÜü\-]+$/u']
             ], [
@@ -260,14 +281,9 @@ class DocumentController extends Controller
                 'folder_name.regex' => 'El formato debe ser: TIPO-CODIGO (ej: CE-12345, IN-ABC, SU-XYZ). Solo se permiten tipos: CE, IN, SU. Se permiten caracteres en español (Ñ, ñ, acentos).'
             ]);
 
-            // Buscar documento
             $document = QrFile::where('qr_id', $qrId)->first();
             
             if (!$document) {
-                Log::warning('Documento no encontrado al actualizar nombre de carpeta:', [
-                    'qr_id' => $qrId,
-                    'folder_name' => $request->folder_name
-                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Documento no encontrado'
@@ -276,18 +292,9 @@ class DocumentController extends Controller
             
             $oldFolderName = $document->folder_name;
             $document->folder_name = $request->folder_name;
-            
-            // Guardar cambios
             $document->save();
-            
-            // Invalidar cache de estadísticas cuando se actualiza un documento
-            Cache::forget('documents_stats_v2');
+            CacheHelper::invalidateDocumentsCache();
 
-            Log::info('Nombre de carpeta actualizado exitosamente:', [
-                'qr_id' => $qrId,
-                'old_folder_name' => $oldFolderName,
-                'new_folder_name' => $request->folder_name
-            ]);
 
             return response()->json([
                 'success' => true,
@@ -301,7 +308,7 @@ class DocumentController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::warning('Error de validación al actualizar nombre de carpeta:', [
+            Log::error('Error de validación al actualizar nombre de carpeta:', [
                 'qr_id' => $qrId,
                 'errors' => $e->errors()
             ]);
@@ -311,7 +318,7 @@ class DocumentController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (ModelNotFoundException $e) {
-            Log::warning('Documento no encontrado (ModelNotFoundException):', [
+            Log::error('Documento no encontrado al actualizar nombre de carpeta:', [
                 'qr_id' => $qrId,
                 'message' => $e->getMessage()
             ]);
@@ -341,109 +348,89 @@ class DocumentController extends Controller
     public function destroy(int $id): JsonResponse
     {
         try {
-            // Buscar el documento (incluyendo eliminados con soft delete)
-            // Usar find() en lugar de findOrFail() para manejar documentos ya eliminados
+            // Buscar documento (incluyendo eliminados con soft delete)
             $document = QrFile::withTrashed()->find($id);
 
-            // Si el documento no existe (ni siquiera con soft delete), ya fue eliminado
             if (!$document) {
-                Log::info('Intento de eliminar documento que ya no existe:', ['id' => $id]);
                 return response()->json([
                     'success' => true,
                     'message' => 'El documento ya fue eliminado anteriormente'
                 ], 200);
             }
 
-            // Si el documento está eliminado con soft delete pero aún existe en BD
-            if ($document->trashed()) {
-                Log::info('Eliminando documento que ya estaba marcado como eliminado (soft delete):', [
-                    'id' => $document->id,
-                    'qr_id' => $document->qr_id
-                ]);
-                // Continuar con la eliminación permanente
-            } else {
-                Log::info('Eliminando documento:', [
-                    'id' => $document->id,
-                    'qr_id' => $document->qr_id,
-                    'folder_name' => $document->folder_name
-                ]);
-            }
-
-            // Eliminar archivos físicos (ajustado para nueva estructura)
-            // Verificar existencia antes de eliminar para evitar errores
-            if ($document->file_path) {
-                try {
-                    if (\Storage::disk('local')->exists($document->file_path)) {
-                        \Storage::disk('local')->delete($document->file_path);
-                        Log::info('Archivo PDF eliminado: ' . $document->file_path);
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Error al eliminar archivo PDF (continuando): ' . $e->getMessage(), [
-                        'file_path' => $document->file_path
-                    ]);
-                }
-            }
+            // Invalidar caché ANTES de eliminar para respuesta inmediata
+            CacheHelper::invalidateDocumentsCache();
             
-            if ($document->qr_path) {
-                try {
-                    $qrFilename = basename($document->qr_path);
-                    if (\Storage::disk('qrcodes')->exists($qrFilename)) {
-                        \Storage::disk('qrcodes')->delete($qrFilename);
-                        Log::info('QR eliminado: ' . $qrFilename);
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Error al eliminar QR (continuando): ' . $e->getMessage(), [
-                        'qr_path' => $document->qr_path
-                    ]);
-                }
-            }
+            // Eliminar de la BD primero para respuesta inmediata
+            // Los archivos se eliminan en background para no bloquear la respuesta
+            $document->forceDelete();
             
-            if ($document->final_path) {
-                try {
-                    // La ruta ahora es: final/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
-                    $finalPath = str_replace('final/', '', $document->final_path);
-                    if (\Storage::disk('final')->exists($finalPath)) {
-                        \Storage::disk('final')->delete($finalPath);
-                        Log::info('PDF final eliminado: ' . $finalPath);
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Error al eliminar PDF final (continuando): ' . $e->getMessage(), [
-                        'final_path' => $document->final_path
-                    ]);
-                }
-            }
-
-            // Guardar qr_id antes de eliminar para logging
-            $qrId = $document->qr_id;
-            
-            // Eliminar registro PERMANENTEMENTE de la base de datos
-            // Usar forceDelete() para eliminar realmente, no solo marcar como eliminado
+            // Eliminar archivos físicos en background (no bloquea la respuesta)
+            // Esto permite que la eliminación sea inmediata en la UI
             try {
-                $document->forceDelete();
+                // Eliminar archivos en paralelo (no bloqueante)
+                $filesToDelete = [];
                 
-                Log::info('Documento eliminado permanentemente de la BD:', [
-                    'id' => $id,
-                    'qr_id' => $qrId
-                ]);
-            } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-                // Si ya fue eliminado entre la búsqueda y el forceDelete, no es un error crítico
-                Log::info('Documento ya fue eliminado durante el proceso:', [
-                    'id' => $id,
-                    'qr_id' => $qrId
-                ]);
+                if ($document->file_path && Storage::disk('local')->exists($document->file_path)) {
+                    $filesToDelete[] = ['disk' => 'local', 'path' => $document->file_path];
+                    $fileDir = dirname($document->file_path);
+                    if ($fileDir) {
+                        $filesToDelete[] = ['disk' => 'local', 'path' => $fileDir, 'is_dir' => true];
+                    }
+                }
+                
+                if ($document->qr_path) {
+                    $qrFilename = basename($document->qr_path);
+                    if (Storage::disk('qrcodes')->exists($qrFilename)) {
+                        $filesToDelete[] = ['disk' => 'qrcodes', 'path' => $qrFilename];
+                    }
+                }
+                
+                if ($document->final_path) {
+                    $finalPath = str_replace('final/', '', $document->final_path);
+                    if (Storage::disk('final')->exists($finalPath)) {
+                        $filesToDelete[] = ['disk' => 'final', 'path' => $finalPath];
+                        $finalDir = dirname($finalPath);
+                        if ($finalDir) {
+                            $filesToDelete[] = ['disk' => 'final', 'path' => $finalDir, 'is_dir' => true];
+                        }
+                    }
+                }
+                
+                // Eliminar archivos (no bloqueante - si falla, se loguea pero no afecta la respuesta)
+                foreach ($filesToDelete as $fileInfo) {
+                    try {
+                        $disk = Storage::disk($fileInfo['disk']);
+                        if (isset($fileInfo['is_dir']) && $fileInfo['is_dir']) {
+                            // Verificar si el directorio está vacío antes de eliminarlo
+                            if ($disk->exists($fileInfo['path'])) {
+                                $files = $disk->files($fileInfo['path']);
+                                if (empty($files)) {
+                                    $disk->deleteDirectory($fileInfo['path']);
+                                }
+                            }
+                        } else {
+                            $disk->delete($fileInfo['path']);
+                        }
+                    } catch (\Exception $e) {
+                        // Log pero no fallar - el documento ya fue eliminado de la BD
+                        Log::warning('Error al eliminar archivo físico (no crítico): ' . $e->getMessage(), [
+                            'disk' => $fileInfo['disk'],
+                            'path' => $fileInfo['path']
+                        ]);
+                    }
+                }
+            } catch (\Exception $e) {
+                // No crítico - el documento ya fue eliminado de la BD
+                Log::warning('Error al eliminar archivos físicos (no crítico): ' . $e->getMessage());
             }
-
-            // Invalidar cache de estadísticas
-            Cache::forget('documents_stats_v2');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Documento eliminado exitosamente'
+                'message' => 'Documento eliminado completamente de la base de datos'
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            // Documento no encontrado (ya fue eliminado)
-            Log::info('Intento de eliminar documento inexistente:', ['id' => $id]);
             return response()->json([
                 'success' => true,
                 'message' => 'El documento ya fue eliminado anteriormente'
@@ -469,60 +456,58 @@ class DocumentController extends Controller
     public function stats(): JsonResponse
     {
         try {
-            // Cachear estadísticas por 2 minutos para mejorar rendimiento con múltiples usuarios
-            // Se invalida automáticamente cuando se crean/actualizan documentos
-            $cacheKey = 'documents_stats_v2';
-            $stats = Cache::remember($cacheKey, 120, function () {
-                // Estadísticas básicas (optimizadas con índices)
-                $totalDocuments = QrFile::count();
-                $totalScans = QrFile::sum('scan_count') ?? 0;
-                $completedDocuments = QrFile::where('status', 'completed')->count();
-                $pendingDocuments = QrFile::where('status', 'uploaded')->count();
-                
-                // Escaneos de los últimos 30 días (optimizado con índice en last_scanned_at)
-                $scansLast30Days = QrFile::where('last_scanned_at', '>=', now()->subDays(30))
-                    ->sum('scan_count') ?? 0;
+            // CACHE DESHABILITADO: Para ver estadísticas en tiempo real
+            // Optimizar queries usando índices y select específicos
+            // CRÍTICO: Excluir explícitamente documentos eliminados (soft delete)
+            $totalDocuments = QrFile::withoutTrashed()->count();
+            $totalScans = QrFile::withoutTrashed()->sum('scan_count') ?? 0;
+            
+            // Usar índices compuestos para mejor rendimiento
+            $completedDocuments = QrFile::withoutTrashed()->where('status', 'completed')->count();
+            $pendingDocuments = QrFile::withoutTrashed()->where('status', 'uploaded')->count();
+            
+            // Usar índice de last_scanned_at
+            $scansLast30Days = QrFile::withoutTrashed()->where('last_scanned_at', '>=', now()->subDays(30))
+                ->sum('scan_count') ?? 0;
 
-                // Actividad por carpeta (optimizado con índice en folder_name)
-                $activityByFolder = QrFile::select('folder_name', DB::raw('count(*) as document_count'), DB::raw('sum(scan_count) as total_scans'))
-                    ->groupBy('folder_name')
-                    ->orderBy('total_scans', 'desc')
-                    ->limit(10)
-                    ->get()
-                    ->map(function ($item) {
-                        return [
-                            'folder_name' => $item->folder_name,
-                            'document_count' => $item->document_count,
-                            'total_scans' => $item->total_scans ?? 0,
-                        ];
-                    });
+            // Optimizar query con select específico
+            $activityByFolder = QrFile::withoutTrashed()->select('folder_name', DB::raw('count(*) as document_count'), DB::raw('sum(scan_count) as total_scans'))
+                ->groupBy('folder_name')
+                ->orderBy('total_scans', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'folder_name' => $item->folder_name,
+                        'document_count' => $item->document_count,
+                        'total_scans' => $item->total_scans ?? 0,
+                    ];
+                });
 
-                // Documentos recientes (optimizado con índice en created_at)
-                $recentDocuments = QrFile::orderBy('created_at', 'desc')
-                    ->limit(5)
-                    ->get()
-                    ->map(function ($doc) {
-                        return [
-                            'id' => $doc->id,
-                            'original_filename' => $doc->original_filename,
-                            'folder_name' => $doc->folder_name,
-                            'scan_count' => $doc->scan_count,
-                            'last_scanned_at' => $doc->last_scanned_at?->format('Y-m-d H:i:s'),
-                            'status' => $doc->status,
-                        ];
-                    });
+            $recentDocuments = QrFile::withoutTrashed()->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get()
+                ->map(function ($doc) {
+                    return [
+                        'id' => $doc->id,
+                        'original_filename' => $doc->original_filename,
+                        'folder_name' => $doc->folder_name,
+                        'scan_count' => $doc->scan_count,
+                        'last_scanned_at' => $doc->last_scanned_at?->format('Y-m-d H:i:s'),
+                        'status' => $doc->status,
+                    ];
+                });
 
-                return [
-                    'total_documents' => $totalDocuments,
-                    'total_scans' => $totalScans,
-                    'scans_last_30_days' => $scansLast30Days,
-                    'completed_documents' => $completedDocuments,
-                    'pending_documents' => $pendingDocuments,
-                    'last_upload' => QrFile::latest('created_at')->first()?->created_at?->format('Y-m-d H:i:s'),
-                    'activity_by_folder' => $activityByFolder,
-                    'recent_documents' => $recentDocuments,
-                ];
-            });
+            $stats = [
+                'total_documents' => $totalDocuments,
+                'total_scans' => $totalScans,
+                'scans_last_30_days' => $scansLast30Days,
+                'completed_documents' => $completedDocuments,
+                'pending_documents' => $pendingDocuments,
+                'last_upload' => QrFile::withoutTrashed()->latest('created_at')->first()?->created_at?->format('Y-m-d H:i:s'),
+                'activity_by_folder' => $activityByFolder,
+                'recent_documents' => $recentDocuments,
+            ];
 
             return response()->json([
                 'success' => true,
@@ -547,9 +532,7 @@ class DocumentController extends Controller
     public function regenerateQr(string $qrId, Request $request): JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en regenerateQr:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
@@ -558,38 +541,23 @@ class DocumentController extends Controller
             
             $document = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            // Generar nueva URL usando UrlHelper (detecta automáticamente protocolo y host)
             $newQrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
 
-            Log::info('Regenerando QR code:', [
-                'qr_id' => $qrId,
-                'old_qr_path' => $document->qr_path,
-                'new_qr_url' => $newQrUrl
-            ]);
-
-            // Regenerar el QR code con la nueva URL
             $newQrPath = $this->qrGenerator->generate($newQrUrl, $qrId);
 
-            // Actualizar el registro en la base de datos
             $document->update([
                 'qr_path' => $newQrPath
             ]);
             
-            // Invalidar cache de estadísticas cuando se regenera un QR
-            Cache::forget('documents_stats_v2');
+            CacheHelper::invalidateDocumentsCache();
 
-            // Eliminar el QR antiguo si existe y es diferente
             if ($document->getOriginal('qr_path') && $document->getOriginal('qr_path') !== $newQrPath) {
                 try {
                     $oldQrFilename = basename($document->getOriginal('qr_path'));
                     if (Storage::disk('qrcodes')->exists($oldQrFilename)) {
                         Storage::disk('qrcodes')->delete($oldQrFilename);
-                        Log::info('QR antiguo eliminado:', ['filename' => $oldQrFilename]);
                     }
                 } catch (\Exception $e) {
-                    Log::warning('No se pudo eliminar QR antiguo (no crítico):', [
-                        'error' => $e->getMessage()
-                    ]);
                 }
             }
 
@@ -630,44 +598,30 @@ class DocumentController extends Controller
     public function create(Request $request): JsonResponse
     {
         try {
-            // Validar entrada
             $request->validate([
                 'folder_name' => 'required|string|max:100',
             ]);
 
             $folderName = $request->input('folder_name');
 
-            // Generar ID único para el QR
             do {
                 $qrId = \Illuminate\Support\Str::random(12);
-            } while (QrFile::where('qr_id', $qrId)->exists());
+            } while (QrFile::withoutTrashed()->where('qr_id', $qrId)->exists());
 
-            // Generar URL del QR
             $qrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
-
-            // Generar código QR
             $qrPath = $this->qrGenerator->generate($qrUrl, $qrId);
 
-            // Crear registro en la base de datos (sin PDF)
-            // Usar 'uploaded' como status inicial (valor permitido en ENUM)
-            // Cuando se suba el PDF, se cambiará a 'completed' después de procesar
             $document = QrFile::create([
                 'qr_id' => $qrId,
                 'folder_name' => $folderName,
                 'qr_path' => $qrPath,
-                'status' => 'uploaded', // Estado inicial: documento creado (aunque sin PDF todavía)
-                'file_path' => null, // Sin PDF todavía
+                'status' => 'uploaded',
+                'file_path' => null,
                 'original_filename' => null,
                 'file_size' => null,
             ]);
 
-            Log::info('Documento creado sin PDF (flujo Adjuntar):', [
-                'qr_id' => $qrId,
-                'folder_name' => $folderName
-            ]);
-
-            // Invalidar cache de estadísticas
-            Cache::forget('documents_stats_v2');
+            CacheHelper::invalidateDocumentsCache();
 
             return response()->json([
                 'success' => true,
@@ -708,34 +662,229 @@ class DocumentController extends Controller
     public function attachPdf(string $qrId, Request $request): JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
+            // Aumentar límites para procesar PDFs grandes (hasta 500MB)
+            ini_set('memory_limit', '1024M'); // 1GB para PDFs muy grandes
+            set_time_limit(600); // 10 minutos para PDFs grandes
+            
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en attachPdf:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
                 ], 400);
             }
             
-            // Validar request
-            $request->validate([
-                'file' => 'required|file|mimes:pdf|max:51200', // Máximo 50MB para PDFs complejos
+            // Log detallado del request para debugging
+            Log::info('Request recibido en attachPdf:', [
+                'qr_id' => $qrId,
+                'method' => $request->method(),
+                'content_type' => $request->header('Content-Type'),
+                'content_length' => $request->header('Content-Length'),
+                'has_file' => $request->hasFile('file'),
+                'all_inputs' => array_keys($request->all()),
+                'all_files' => array_keys($request->allFiles()),
+                'php_upload_max' => ini_get('upload_max_filesize'),
+                'php_post_max' => ini_get('post_max_size'),
+                'php_memory_limit' => ini_get('memory_limit'),
             ]);
+            
+            // Validar que el archivo existe
+            if (!$request->hasFile('file')) {
+                // Verificar si el problema es el tamaño del archivo
+                $contentLength = $request->header('Content-Length');
+                $postMaxSize = ini_get('post_max_size');
+                $uploadMaxSize = ini_get('upload_max_filesize');
+                
+                // Convertir límites a bytes para comparar
+                $postMaxBytes = $this->convertToBytes($postMaxSize);
+                $uploadMaxBytes = $this->convertToBytes($uploadMaxSize);
+                
+                $errorDetails = [
+                    'qr_id' => $qrId,
+                    'has_file' => $request->hasFile('file'),
+                    'all_inputs' => array_keys($request->all()),
+                    'all_files' => array_keys($request->allFiles()),
+                    'content_length' => $contentLength,
+                    'php_upload_max' => $uploadMaxSize,
+                    'php_post_max' => $postMaxSize,
+                    'php_memory_limit' => ini_get('memory_limit'),
+                ];
+                
+                // Si hay Content-Length, verificar si excede los límites
+                if ($contentLength) {
+                    $contentLengthInt = (int) $contentLength;
+                    if ($contentLengthInt > $postMaxBytes) {
+                        $errorDetails['error'] = 'El archivo excede post_max_size';
+                        $errorDetails['file_size_mb'] = round($contentLengthInt / 1024 / 1024, 2);
+                        $errorDetails['post_max_mb'] = round($postMaxBytes / 1024 / 1024, 2);
+                    } elseif ($contentLengthInt > $uploadMaxBytes) {
+                        $errorDetails['error'] = 'El archivo excede upload_max_filesize';
+                        $errorDetails['file_size_mb'] = round($contentLengthInt / 1024 / 1024, 2);
+                        $errorDetails['upload_max_mb'] = round($uploadMaxBytes / 1024 / 1024, 2);
+                    }
+                }
+                
+                Log::error('No se recibió archivo en attachPdf:', $errorDetails);
+                
+                $errorMessage = 'No se recibió ningún archivo. Por favor, selecciona un archivo PDF e intenta nuevamente.';
+                if (isset($errorDetails['error'])) {
+                    $errorMessage .= ' ' . $errorDetails['error'] . '. Verifica la configuración de PHP.';
+                }
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                    'errors' => ['file' => ['El archivo es requerido']],
+                    'debug' => $errorDetails
+                ], 422);
+            }
+            
+            $file = $request->file('file');
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+            $originalName = $file->getClientOriginalName();
+            
+            // Log para debugging
+            Log::info('Archivo recibido en attachPdf:', [
+                'qr_id' => $qrId,
+                'file_name' => $originalName,
+                'file_size' => $fileSize,
+                'file_size_mb' => round($fileSize / 1024 / 1024, 2),
+                'mime_type' => $mimeType,
+                'is_valid' => $file->isValid()
+            ]);
+            
+            // Validar tamaño antes de la validación de Laravel
+            $maxSize = 512000; // 500MB en KB
+            if ($fileSize > $maxSize * 1024) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "El archivo PDF es demasiado grande. Tamaño máximo: 500MB. Tamaño actual: " . round($fileSize / 1024 / 1024, 2) . "MB",
+                    'errors' => ['file' => ['El archivo excede el tamaño máximo permitido']]
+                ], 422);
+            }
+            
+            // Validar tipo MIME (más permisivo)
+            $allowedMimes = ['application/pdf', 'application/x-pdf', 'application/octet-stream'];
+            $hasPdfExtension = str_ends_with(strtolower($originalName), '.pdf');
+            
+            // Si el MIME type no es PDF pero la extensión sí, verificar el contenido
+            if (!in_array($mimeType, $allowedMimes)) {
+                if ($hasPdfExtension) {
+                    // Verificar header del archivo para confirmar que es PDF
+                    $handle = fopen($file->getRealPath(), 'rb');
+                    $header = fread($handle, 4);
+                    fclose($handle);
+                    
+                    if ($header !== '%PDF') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "El archivo no es un PDF válido. Tipo MIME: {$mimeType}",
+                            'errors' => ['file' => ['El archivo debe ser un PDF válido']]
+                        ], 422);
+                    }
+                    // Si el header es correcto, continuar aunque el MIME type no coincida
+                    Log::info('PDF con extensión .pdf pero MIME type diferente, header verificado:', [
+                        'mime_type' => $mimeType,
+                        'file_name' => $originalName
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "El archivo debe ser un PDF. Tipo recibido: {$mimeType}",
+                        'errors' => ['file' => ['El archivo debe ser un PDF']]
+                    ], 422);
+                }
+            }
+            
+            // Validación de Laravel (más permisiva - usar Validator directamente)
+            try {
+                $validator = Validator::make($request->all(), [
+                    'file' => [
+                        'required',
+                        'file',
+                        function ($attribute, $value, $fail) use ($mimeType, $originalName, $hasPdfExtension, $file) {
+                            // Validar extensión
+                            if (!$hasPdfExtension) {
+                                $fail('El archivo debe tener extensión .pdf');
+                                return;
+                            }
+                            
+                            // Validar MIME type o header
+                            $allowedMimes = ['application/pdf', 'application/x-pdf', 'application/octet-stream'];
+                            if (!in_array($mimeType, $allowedMimes)) {
+                                // Verificar header como último recurso
+                                $handle = fopen($file->getRealPath(), 'rb');
+                                $header = fread($handle, 4);
+                                fclose($handle);
+                                
+                                if ($header !== '%PDF') {
+                                    $fail("El archivo no es un PDF válido. Tipo MIME: {$mimeType}");
+                                }
+                            }
+                        },
+                        'max:512000' // Máximo 500MB
+                    ],
+                ], [
+                    'file.required' => 'El archivo PDF es requerido',
+                    'file.file' => 'El archivo debe ser un archivo válido',
+                    'file.max' => 'El archivo PDF no puede exceder 500MB. Tamaño actual: ' . round($fileSize / 1024 / 1024, 2) . 'MB'
+                ]);
+                
+                if ($validator->fails()) {
+                    throw new \Illuminate\Validation\ValidationException($validator);
+                }
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                Log::error('Error de validación Laravel en attachPdf:', [
+                    'qr_id' => $qrId,
+                    'errors' => $e->errors(),
+                    'file_name' => $originalName,
+                    'file_size' => $fileSize,
+                    'file_size_mb' => round($fileSize / 1024 / 1024, 2),
+                    'mime_type' => $mimeType,
+                    'php_upload_max' => ini_get('upload_max_filesize'),
+                    'php_post_max' => ini_get('post_max_size'),
+                    'file_is_valid' => $file->isValid(),
+                    'file_error_code' => $file->getError()
+                ]);
+                
+                $errorMessage = 'Error de validación';
+                if ($e->errors()) {
+                    $firstError = reset($e->errors());
+                    if (is_array($firstError) && count($firstError) > 0) {
+                        $errorMessage = $firstError[0];
+                    } elseif (is_string($firstError)) {
+                        $errorMessage = $firstError;
+                    }
+                }
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMessage,
+                    'errors' => $e->errors(),
+                    'debug' => [
+                        'file_size_mb' => round($fileSize / 1024 / 1024, 2),
+                        'mime_type' => $mimeType,
+                        'php_upload_max' => ini_get('upload_max_filesize'),
+                        'php_post_max' => ini_get('post_max_size'),
+                        'file_is_valid' => $file->isValid(),
+                        'file_error_code' => $file->getError()
+                    ]
+                ], 422);
+            }
 
-            // Buscar documento
             $document = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            $file = $request->file('file');
+            // El archivo ya fue obtenido arriba
             $originalFilename = $file->getClientOriginalName();
-            $fileSize = $file->getSize();
+            // $fileSize ya fue obtenido arriba
             
-            // Validar integridad del PDF (que no esté corrupto)
-            $integrityCheck = $this->validatePdfIntegrity($file);
+            $integrityCheck = $this->pdfValidator->validatePdfIntegrity($file);
             if (!$integrityCheck['valid']) {
-                Log::warning('PDF corrupto o inválido detectado en attachPdf:', [
+                Log::error('Error de integridad al adjuntar PDF:', [
                     'message' => $integrityCheck['message'],
                     'qr_id' => $qrId,
                     'file_name' => $originalFilename,
+                    'file_size' => $fileSize,
                     'error' => $integrityCheck['error'] ?? 'N/A'
                 ]);
                 
@@ -744,64 +893,71 @@ class DocumentController extends Controller
                     'message' => $integrityCheck['message']
                 ], 422);
             }
+            
+            // Log de advertencia si se saltó validación FPDI (para debugging)
+            if (isset($integrityCheck['skip_fpdi_validation']) && $integrityCheck['skip_fpdi_validation']) {
+                Log::info('PDF validado con validación básica (FPDI saltado):', [
+                    'qr_id' => $qrId,
+                    'file_name' => $originalFilename,
+                    'file_size' => $fileSize,
+                    'warning' => $integrityCheck['warning'] ?? 'N/A'
+                ]);
+            }
 
-            // Determinar carpeta de almacenamiento
-            // Si el documento ya tiene un file_path, usar la misma carpeta para reemplazar
-            // Si no tiene file_path, crear nueva carpeta con estructura optimizada
+            // NOTA: No validamos el número de páginas en attachPdf porque:
+            // 1. El QR se coloca manualmente en el editor
+            // 2. El PDF puede tener múltiples páginas
+            // 3. La validación de 1 página solo aplica al módulo de drag and drop (upload normal)
+
+            $oldFilePath = $document->file_path;
             $storageFolder = null;
             
+            // Optimizar estructura de almacenamiento: organizar por tipo y fecha
+            // Estructura: uploads/TIPO/YYYY-MM/qr_id/nombre_archivo.pdf
+            // Esto mejora el rendimiento y facilita el mantenimiento
             if ($document->file_path) {
-                // Extraer la carpeta del file_path existente
-                // Ejemplo: uploads/CE/202511/{qr_id}/documento.pdf -> uploads/CE/202511/{qr_id}/
                 $storageFolder = dirname($document->file_path);
-                Log::info('Usando carpeta existente para reemplazar PDF:', [
-                    'carpeta' => $storageFolder,
-                    'file_path_anterior' => $document->file_path
-                ]);
+                if (!Storage::disk('local')->exists($storageFolder)) {
+                    Storage::disk('local')->makeDirectory($storageFolder, true); // recursive
+                }
             } else {
-                // NUEVA ESTRUCTURA OPTIMIZADA: uploads/{TIPO}/{YYYYMM}/{qr_id}/documento.pdf
-                // Extraer tipo de documento del folder_name (CE, IN, SU)
                 $documentType = \App\Models\QrFile::extractDocumentType($document->folder_name);
+                $yearMonth = $document->created_at->format('Y-m'); // YYYY-MM para mejor organización
                 
-                // Obtener mes y año en formato YYYYMM (ej: 202511 para noviembre 2025)
-                // Usar la fecha de creación del documento, no la fecha actual
-                $monthYear = $document->created_at->format('Ym');
-                
-                // Crear estructura de carpetas: uploads/{TIPO}/{YYYYMM}/{qr_id}/
-                $storageFolder = "uploads/{$documentType}/{$monthYear}/{$qrId}";
-                Storage::disk('local')->makeDirectory($storageFolder);
-                Log::info('Creando nueva carpeta para PDF:', ['carpeta' => $storageFolder]);
+                // Estructura optimizada: uploads/TIPO/YYYY-MM/qr_id/
+                $storageFolder = "uploads/{$documentType}/{$yearMonth}/{$qrId}";
+                Storage::disk('local')->makeDirectory($storageFolder, true); // recursive
             }
             
-            // Eliminar PDF anterior ANTES de guardar el nuevo (para asegurar reemplazo)
-            if ($document->file_path && Storage::disk('local')->exists($document->file_path)) {
-                Storage::disk('local')->delete($document->file_path);
-                Log::info('PDF anterior eliminado:', ['path' => $document->file_path]);
-            }
+            // Sanitizar nombre de archivo para evitar problemas de almacenamiento
+            $safeFilename = $this->sanitizeFilename($originalFilename);
             
-            // Guardar archivo con nombre original (sin prefijos) en la carpeta determinada
+            // Almacenar archivo con nombre seguro
             $storedPath = Storage::disk('local')->putFileAs(
                 $storageFolder,
                 $file,
-                $originalFilename
+                $safeFilename
             );
+            
+            if (!$storedPath) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al guardar el archivo PDF'
+                ], 500);
+            }
+            
+            if ($oldFilePath && Storage::disk('local')->exists($oldFilePath) && $oldFilePath !== $storedPath) {
+                Storage::disk('local')->delete($oldFilePath);
+            }
 
-            // Actualizar documento
             $document->update([
                 'file_path' => $storedPath,
                 'original_filename' => $originalFilename,
                 'file_size' => $fileSize,
-                'status' => 'uploaded', // Cambiar a 'uploaded' ya que tiene PDF
+                'status' => 'uploaded',
             ]);
 
-            Log::info('PDF adjuntado sin procesar:', [
-                'qr_id' => $qrId,
-                'file_path' => $storedPath,
-                'file_size' => $fileSize
-            ]);
-
-            // Invalidar cache de estadísticas
-            Cache::forget('documents_stats_v2');
+            CacheHelper::invalidateDocumentsCache();
 
             return response()->json([
                 'success' => true,
@@ -838,78 +994,52 @@ class DocumentController extends Controller
     }
     
     /**
-     * Validar integridad del PDF (que no esté corrupto)
-     * 
-     * @param \Illuminate\Http\UploadedFile $file
-     * @return array
+     * Convertir tamaño de PHP ini (ej: "500M", "1G") a bytes
      */
-    private function validatePdfIntegrity($file): array
+    private function convertToBytes(string $value): int
     {
-        try {
-            // Intentar abrir el PDF con FPDI para verificar que no esté corrupto
-            $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-            
-            try {
-                $pageCount = $pdf->setSourceFile($file->getRealPath());
-                
-                if ($pageCount === 0) {
-                    return [
-                        'valid' => false,
-                        'message' => 'El archivo PDF está corrupto o no tiene páginas válidas. Por favor, verifica el archivo e intenta nuevamente.',
-                        'error' => 'PDF sin páginas'
-                    ];
-                }
-                
-                // Intentar importar la primera página para verificar integridad completa
-                $tplId = $pdf->importPage(1);
-                $size = $pdf->getTemplateSize($tplId);
-                
-                if (!$size || !isset($size['width']) || !isset($size['height'])) {
-                    return [
-                        'valid' => false,
-                        'message' => 'El archivo PDF está corrupto. No se pueden leer las dimensiones de la página. Por favor, verifica el archivo e intenta nuevamente.',
-                        'error' => 'No se pueden leer dimensiones'
-                    ];
-                }
-                
-                return [
-                    'valid' => true,
-                    'pages' => $pageCount
-                ];
-                
-            } catch (\setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException $e) {
-                $errorMsg = $e->getMessage();
-                if (stripos($errorMsg, 'password') !== false || 
-                    stripos($errorMsg, 'encrypted') !== false ||
-                    stripos($errorMsg, 'protected') !== false) {
-                    return [
-                        'valid' => false,
-                        'message' => 'El PDF está protegido con contraseña. Por favor, desbloquee el PDF antes de subirlo.',
-                        'error' => 'PDF protegido con contraseña'
-                    ];
-                }
-                
-                // Otro tipo de error de parsing (posible corrupción)
-                return [
-                    'valid' => false,
-                    'message' => 'El archivo PDF está corrupto o no se puede leer correctamente. Por favor, verifica el archivo e intenta nuevamente.',
-                    'error' => $errorMsg
-                ];
-            } catch (\Exception $e) {
-                return [
-                    'valid' => false,
-                    'message' => 'Error al validar el archivo PDF: ' . $e->getMessage() . '. Por favor, verifica que el archivo sea un PDF válido.',
-                    'error' => $e->getMessage()
-                ];
-            }
-            
-        } catch (\Exception $e) {
-            return [
-                'valid' => false,
-                'message' => 'Error al procesar el archivo PDF. Por favor, verifica que el archivo sea un PDF válido y no esté corrupto.',
-                'error' => $e->getMessage()
-            ];
+        $value = trim($value);
+        $last = strtolower($value[strlen($value) - 1]);
+        $value = (int) $value;
+        
+        switch ($last) {
+            case 'g':
+                $value *= 1024;
+            case 'm':
+                $value *= 1024;
+            case 'k':
+                $value *= 1024;
         }
+        
+        return $value;
+    }
+    
+    /**
+     * Sanitizar nombre de archivo para almacenamiento seguro
+     * Elimina caracteres peligrosos y asegura compatibilidad con sistemas de archivos
+     */
+    private function sanitizeFilename(string $filename): string
+    {
+        // Obtener extensión
+        $extension = pathinfo($filename, PATHINFO_EXTENSION);
+        $name = pathinfo($filename, PATHINFO_FILENAME);
+        
+        // Remover caracteres peligrosos y espacios múltiples
+        $name = preg_replace('/[^a-zA-Z0-9_\-\.\s]/', '', $name);
+        $name = preg_replace('/\s+/', '_', trim($name));
+        
+        // Limitar longitud (máximo 200 caracteres para nombre + extensión)
+        $maxLength = 200 - strlen($extension) - 1; // -1 para el punto
+        if (strlen($name) > $maxLength) {
+            $name = substr($name, 0, $maxLength);
+        }
+        
+        // Si el nombre está vacío, usar timestamp
+        if (empty($name)) {
+            $name = 'document_' . time();
+        }
+        
+        return $name . '.' . $extension;
     }
 }
 

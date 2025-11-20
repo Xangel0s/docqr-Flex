@@ -84,7 +84,15 @@ export class UploadComponent implements OnInit {
 
     const files = event.dataTransfer?.files;
     if (files && files.length > 0) {
-      this.handleFile(files[0]);
+      const file = files[0];
+      // Verificar que sea un archivo válido
+      if (file && file instanceof File) {
+        this.handleFile(file);
+      } else {
+        this.notificationService.showError('Archivo no válido. Por favor, intenta con otro archivo.');
+      }
+    } else {
+      this.notificationService.showError('No se detectó ningún archivo. Por favor, intenta nuevamente.');
     }
   }
 
@@ -102,15 +110,26 @@ export class UploadComponent implements OnInit {
    * Procesar archivo seleccionado
    */
   private handleFile(file: File): void {
-    // Validar tipo de archivo
-    if (file.type !== 'application/pdf') {
+    // Validar tipo de archivo (por MIME type o extensión)
+    const isValidPdf = file.type === 'application/pdf' || 
+                       file.type === 'application/x-pdf' ||
+                       file.name.toLowerCase().endsWith('.pdf');
+    
+    if (!isValidPdf) {
       this.notificationService.showError('Solo se permiten archivos PDF');
       return;
     }
 
-    // Validar tamaño (máximo 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      this.notificationService.showError('El archivo debe ser menor a 10MB');
+    // Validar tamaño (máximo 500MB para drag and drop)
+    const maxSize = 500 * 1024 * 1024; // 500MB
+    if (file.size > maxSize) {
+      this.notificationService.showError(`El archivo debe ser menor a ${(maxSize / (1024 * 1024)).toFixed(0)}MB`);
+      return;
+    }
+
+    // Validar que el archivo no esté vacío
+    if (file.size === 0) {
+      this.notificationService.showError('El archivo está vacío');
       return;
     }
 
@@ -130,8 +149,6 @@ export class UploadComponent implements OnInit {
    * Solo limpia el campo editable si estaba vacío
    */
   onDocumentTypeChange(): void {
-    // No hacer nada, el prefijo se actualiza automáticamente
-    // El usuario puede seguir escribiendo en el campo editable
   }
 
   /**
@@ -178,7 +195,6 @@ export class UploadComponent implements OnInit {
     this.isUploading = true;
     this.uploadProgress = 0;
 
-    // Simular progreso (en producción esto vendría del servidor)
     const progressInterval = setInterval(() => {
       if (this.uploadProgress < 90) {
         this.uploadProgress += 10;
@@ -204,7 +220,20 @@ export class UploadComponent implements OnInit {
         this.isUploading = false;
         this.uploadProgress = 0;
         
-        const errorMessage = error.error?.message || 'Error al subir el archivo';
+        let errorMessage = 'Error al subir el archivo';
+        
+        if (error.error?.message) {
+          errorMessage = error.error.message;
+        } else if (error.message) {
+          errorMessage = error.message;
+        } else if (error.status === 0) {
+          errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión.';
+        } else if (error.status === 422) {
+          errorMessage = error.error?.message || 'Error de validación. Verifica que el PDF sea válido y tenga solo 1 página.';
+        } else if (error.status === 500) {
+          errorMessage = 'Error en el servidor. Por favor, intenta nuevamente.';
+        }
+        
         this.notificationService.showError(errorMessage);
       }
     });

@@ -30,8 +30,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('qr_files', function (Blueprint $table) {
-            // NOTA: Esto puede fallar si hay registros con valores NULL
-            // En producción, primero actualizar los registros NULL antes de revertir
             $table->string('file_path', 500)->nullable(false)->change();
             $table->string('original_filename', 255)->nullable(false)->change();
             $table->unsignedInteger('file_size')->nullable(false)->change();

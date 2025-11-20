@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuthMiddleware
@@ -11,23 +12,22 @@ class AuthMiddleware
     /**
      * Handle an incoming request.
      * 
-     * Este middleware usa Sanctum para autenticar usuarios.
-     * Primero intenta autenticar con Sanctum, luego verifica que el usuario esté activo.
+     * Este middleware usa sesiones para autenticar usuarios.
+     * Verifica que el usuario esté autenticado mediante sesión y activo.
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Intentar autenticar con Sanctum
-        // Sanctum verifica automáticamente el token Bearer en el header Authorization
-        $user = $request->user('sanctum');
-        
-        if (!$user) {
+        // Verificar autenticación por sesión
+        if (!Auth::check()) {
             return response()->json([
                 'success' => false,
-                'message' => 'No autorizado. Token requerido o inválido.'
+                'message' => 'No autorizado. Sesión requerida.'
             ], 401);
         }
+
+        $user = Auth::user();
 
         // Verificar que el usuario esté activo
         if (!$user->is_active) {

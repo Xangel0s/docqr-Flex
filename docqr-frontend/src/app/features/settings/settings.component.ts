@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
 import { NotificationService } from '../../core/services/notification.service';
+import { AuthService } from '../../core/services/auth.service';
 
 /**
  * Componente de Configuración
@@ -20,33 +21,75 @@ export class SettingsComponent implements OnInit {
   sidebarOpen: boolean = false;
   
   // Datos del perfil
-  fullName: string = 'Administrador';
-  email: string = 'admin@docqr.com';
+  fullName: string = '';
+  email: string = '';
+  originalFullName: string = '';
+  originalEmail: string = '';
   
   // Cambio de contraseña
   currentPassword: string = '';
   newPassword: string = '';
   confirmPassword: string = '';
   
-  // Estados
   savingProfile: boolean = false;
   changingPassword: boolean = false;
   profileFormChanged: boolean = false;
   passwordFormChanged: boolean = false;
+  loading: boolean = true;
 
-  constructor(private notificationService: NotificationService) {}
+  constructor(
+    private notificationService: NotificationService,
+    private authService: AuthService
+  ) {}
 
   ngOnInit(): void {
     if (window.innerWidth >= 768) {
       this.sidebarOpen = true;
     }
+    this.loadUserData();
+  }
+
+  /**
+   * Cargar datos del usuario desde el servidor
+   */
+  loadUserData(): void {
+    this.loading = true;
+    this.authService.checkAuth().subscribe({
+      next: (response) => {
+        if (response.success && response.data?.user) {
+          const user = response.data.user;
+          this.fullName = user.name || 'Administrador';
+          this.email = user.email || '';
+          this.originalFullName = this.fullName;
+          this.originalEmail = this.email;
+        } else {
+          // Si no hay usuario, usar valores por defecto
+          this.fullName = 'Administrador';
+          this.email = '';
+          this.originalFullName = this.fullName;
+          this.originalEmail = this.email;
+        }
+        this.loading = false;
+      },
+      error: () => {
+        // En caso de error, usar valores por defecto
+        this.fullName = 'Administrador';
+        this.email = '';
+        this.originalFullName = this.fullName;
+        this.originalEmail = this.email;
+        this.loading = false;
+      }
+    });
   }
 
   /**
    * Detectar cambios en el formulario de perfil
    */
   onProfileChange(): void {
-    this.profileFormChanged = true;
+    this.profileFormChanged = (
+      this.fullName !== this.originalFullName || 
+      this.email !== this.originalEmail
+    );
   }
 
   /**
@@ -85,19 +128,32 @@ export class SettingsComponent implements OnInit {
 
     this.savingProfile = true;
     
-    // Simular guardado (TODO: conectar con API)
-    setTimeout(() => {
-      this.savingProfile = false;
-      this.profileFormChanged = false;
-      this.notificationService.showSuccess('Perfil actualizado exitosamente');
-    }, 1000);
+    this.authService.updateProfile(this.fullName.trim(), this.email.trim() || undefined).subscribe({
+      next: (response) => {
+        this.savingProfile = false;
+        if (response.success) {
+          this.originalFullName = this.fullName;
+          this.originalEmail = this.email;
+          this.profileFormChanged = false;
+          this.notificationService.showSuccess(response.message || 'Perfil actualizado exitosamente');
+        } else {
+          this.notificationService.showError(response.message || 'Error al actualizar el perfil');
+        }
+      },
+      error: (error) => {
+        this.savingProfile = false;
+        const errorMessage = error.error?.message || error.message || 'Error al actualizar el perfil';
+        this.notificationService.showError(errorMessage);
+      }
+    });
   }
 
   /**
    * Cancelar cambios del perfil
    */
   cancelProfile(): void {
-    this.fullName = 'Administrador';
+    this.fullName = this.originalFullName;
+    this.email = this.originalEmail;
     this.profileFormChanged = false;
   }
 
@@ -127,15 +183,29 @@ export class SettingsComponent implements OnInit {
 
     this.changingPassword = true;
     
-    // Simular actualización (TODO: conectar con API)
-    setTimeout(() => {
-      this.changingPassword = false;
-      this.currentPassword = '';
-      this.newPassword = '';
-      this.confirmPassword = '';
-      this.passwordFormChanged = false;
-      this.notificationService.showSuccess('Contraseña actualizada exitosamente');
-    }, 1000);
+    this.authService.updatePassword(
+      this.currentPassword,
+      this.newPassword,
+      this.confirmPassword
+    ).subscribe({
+      next: (response) => {
+        this.changingPassword = false;
+        if (response.success) {
+          this.currentPassword = '';
+          this.newPassword = '';
+          this.confirmPassword = '';
+          this.passwordFormChanged = false;
+          this.notificationService.showSuccess(response.message || 'Contraseña actualizada exitosamente');
+        } else {
+          this.notificationService.showError(response.message || 'Error al actualizar la contraseña');
+        }
+      },
+      error: (error) => {
+        this.changingPassword = false;
+        const errorMessage = error.error?.message || error.message || 'Error al actualizar la contraseña';
+        this.notificationService.showError(errorMessage);
+      }
+    });
   }
 
   /**

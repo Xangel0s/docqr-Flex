@@ -26,7 +26,6 @@ class ViewController extends Controller
         try {
             // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($hash)) {
-                Log::warning('Intento de acceso con qr_id inválido:', ['hash' => $hash]);
                 abort(400, 'ID de documento inválido');
             }
             
@@ -59,16 +58,6 @@ class ViewController extends Controller
             $fullPath = $pdfInfo['fullPath'];
             $pdfType = $pdfInfo['type'];
             
-            Log::info('Sirviendo PDF:', [
-                'qr_id' => $hash,
-                'type' => $pdfType,
-                'file_path' => $filePath,
-                'full_path' => $fullPath,
-                'exists' => file_exists($fullPath),
-                'message' => $pdfType === 'final' 
-                    ? 'PDF final con QR embebido' 
-                    : 'PDF original (QR no embebido aún)'
-            ]);
 
             // Leer el contenido del archivo
             $content = file_get_contents($fullPath);

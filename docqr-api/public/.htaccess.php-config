@@ -1,0 +1,29 @@
+# Configuración PHP para manejar archivos grandes
+# Copia este contenido al .htaccess principal si tu servidor lo permite
+
+<IfModule mod_php8.c>
+    php_value upload_max_filesize 500M
+    php_value post_max_size 510M
+    php_value memory_limit 1024M
+    php_value max_execution_time 600
+    php_value max_input_time 600
+    php_value max_input_vars 3000
+</IfModule>
+
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 500M
+    php_value post_max_size 510M
+    php_value memory_limit 1024M
+    php_value max_execution_time 600
+    php_value max_input_time 600
+    php_value max_input_vars 3000
+</IfModule>
+
+# Si el servidor no permite php_value en .htaccess,
+# crea un archivo .user.ini con este contenido:
+# upload_max_filesize = 500M
+# post_max_size = 510M
+# memory_limit = 1024M
+# max_execution_time = 600
+# max_input_time = 600
+# max_input_vars = 3000

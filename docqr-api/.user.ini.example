@@ -1,0 +1,17 @@
+; Configuración PHP para manejar archivos grandes
+; Renombrar este archivo a .user.ini y subirlo a la raíz del proyecto
+
+; Límites de carga de archivos (500MB)
+upload_max_filesize = 500M
+post_max_size = 510M
+
+; Memoria y tiempo de ejecución
+memory_limit = 1024M
+max_execution_time = 600
+max_input_time = 600
+max_input_vars = 3000
+
+; Otras configuraciones importantes
+file_uploads = On
+allow_url_fopen = On
+

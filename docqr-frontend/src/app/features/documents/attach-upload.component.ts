@@ -29,7 +29,8 @@ export class AttachUploadComponent implements OnInit {
   isUploading: boolean = false;
   uploadProgress: number = 0;
   dragOver: boolean = false;
-  qrImageUrlWithCache: string = ''; // URL del QR con cache buster (se actualiza solo cuando es necesario)
+  qrImageUrlWithCache: string = '';
+  isSaving: boolean = false; // Estado para el botón "Guardar y Finalizar"
 
   constructor(
     private route: ActivatedRoute,
@@ -135,9 +136,10 @@ export class AttachUploadComponent implements OnInit {
       return;
     }
 
-    // Validar tamaño (máximo 50MB para PDFs complejos)
-    if (file.size > 50 * 1024 * 1024) {
-      this.notificationService.showError('El archivo debe ser menor a 50MB');
+    // Validar tamaño (máximo 500MB para PDFs grandes)
+    const maxSize = 500 * 1024 * 1024; // 500MB
+    if (file.size > maxSize) {
+      this.notificationService.showError(`El archivo debe ser menor a ${(maxSize / (1024 * 1024)).toFixed(0)}MB`);
       return;
     }
 
@@ -164,7 +166,6 @@ export class AttachUploadComponent implements OnInit {
     this.isUploading = true;
     this.uploadProgress = 0;
 
-    // Simular progreso
     const progressInterval = setInterval(() => {
       if (this.uploadProgress < 90) {
         this.uploadProgress += 10;
@@ -176,10 +177,10 @@ export class AttachUploadComponent implements OnInit {
       next: (response) => {
         clearInterval(progressInterval);
         this.uploadProgress = 100;
-        this.isUploading = false; // CRÍTICO: Detener loading
+        this.isUploading = false;
 
         if (response.success) {
-          this.notificationService.showSuccess('PDF adjuntado exitosamente');
+          this.notificationService.showSuccess('✅ PDF adjuntado exitosamente');
           
           // Limpiar archivo seleccionado y progreso
           this.selectedFile = null;
@@ -187,10 +188,16 @@ export class AttachUploadComponent implements OnInit {
           
           // Recargar carpeta para ver el PDF actualizado
           this.loadDocument();
+          
           // Actualizar URL del QR después de subir PDF
           setTimeout(() => {
             this.updateQrImageUrl();
           }, 100);
+          
+          // Mostrar mensaje para guardar cambios
+          setTimeout(() => {
+            this.notificationService.showSuccess('💾 Recuerda hacer clic en "Guardar y Finalizar" para completar el proceso');
+          }, 2000);
         } else {
           const errorMessage = response.message || 'Error al subir el archivo';
           this.notificationService.showError(errorMessage);
@@ -201,7 +208,43 @@ export class AttachUploadComponent implements OnInit {
         this.isUploading = false;
         this.uploadProgress = 0;
         
-        const errorMessage = error.error?.message || 'Error al subir el archivo';
+        let errorMessage = 'Error al subir el archivo';
+        
+        if (error.error) {
+          if (error.error.message) {
+            errorMessage = error.error.message;
+          } else if (error.error.errors) {
+            // Si hay errores de validación, mostrar el primero
+            const firstError = Object.values(error.error.errors)[0];
+            if (Array.isArray(firstError) && firstError.length > 0) {
+              errorMessage = firstError[0];
+            } else if (typeof firstError === 'string') {
+              errorMessage = firstError;
+            }
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        // Mensajes más específicos según el código de estado
+        if (error.status === 422) {
+          if (!errorMessage || errorMessage === 'Error al subir el archivo') {
+            errorMessage = 'Error de validación. Verifica que el archivo sea un PDF válido y no exceda 500MB.';
+          }
+        } else if (error.status === 413) {
+          errorMessage = 'El archivo es demasiado grande. El servidor no puede procesarlo. Verifica la configuración de PHP.';
+        } else if (error.status === 0) {
+          errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión.';
+        } else if (error.status === 500) {
+          errorMessage = 'Error en el servidor. Por favor, intenta nuevamente o contacta al administrador.';
+        }
+        
+        console.error('Error al adjuntar PDF:', {
+          status: error.status,
+          message: errorMessage,
+          error: error.error
+        });
+        
         this.notificationService.showError(errorMessage);
       }
     });
@@ -222,30 +265,89 @@ export class AttachUploadComponent implements OnInit {
   }
 
   /**
-   * Copiar URL del QR al portapapeles
+   * Copiar imagen del QR al portapapeles
    */
   copyQrUrl(): void {
-    if (!this.document?.qr_url) return;
+    if (!this.document?.qr_image_url) return;
 
-    navigator.clipboard.writeText(this.document.qr_url).then(() => {
-      this.notificationService.showSuccess('URL del QR copiada al portapapeles');
-    }).catch(() => {
-      this.notificationService.showError('Error al copiar la URL');
-    });
+    // Obtener la imagen del QR y copiarla al portapapeles
+    fetch(this.qrImageUrlWithCache || this.document.qr_image_url)
+      .then(response => response.blob())
+      .then(blob => {
+        const item = new ClipboardItem({ 'image/png': blob });
+        navigator.clipboard.write([item]).then(() => {
+          this.notificationService.showSuccess('Imagen del QR copiada al portapapeles');
+        }).catch(() => {
+          this.notificationService.showError('Error al copiar la imagen del QR');
+        });
+      })
+      .catch(() => {
+        this.notificationService.showError('Error al obtener la imagen del QR');
+      });
   }
 
   /**
    * Descargar imagen del QR
    */
   downloadQr(): void {
-    if (!this.document?.qr_image_url) return;
+    if (!this.document?.qr_image_url || !this.document?.qr_id) return;
 
-    const link = document.createElement('a');
-    link.href = this.document.qr_image_url;
-    link.download = `qr-${this.document.qr_id}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Descargar la imagen del QR
+    const url = this.qrImageUrlWithCache || this.document.qr_image_url;
+    fetch(url)
+      .then(response => response.blob())
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = `qr-${this.document!.qr_id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+        this.notificationService.showSuccess('QR descargado exitosamente');
+      })
+      .catch(() => {
+        this.notificationService.showError('Error al descargar el QR');
+      });
+  }
+
+  /**
+   * Copiar URL del QR al portapapeles
+   */
+  copyQrUrlToClipboard(): void {
+    if (!this.document?.qr_url) {
+      this.notificationService.showError('No hay URL disponible para copiar');
+      return;
+    }
+
+    const urlToCopy = this.document.qr_url;
+    navigator.clipboard.writeText(urlToCopy).then(() => {
+      this.notificationService.showSuccess('URL copiada al portapapeles');
+    }).catch(() => {
+      // Fallback para navegadores antiguos
+      const textArea = document.createElement('textarea');
+      textArea.value = urlToCopy;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          this.notificationService.showSuccess('URL copiada al portapapeles');
+        } else {
+          this.notificationService.showError('Error al copiar la URL');
+        }
+      } catch {
+        this.notificationService.showError('Error al copiar la URL');
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    });
   }
 
   /**
@@ -260,6 +362,40 @@ export class AttachUploadComponent implements OnInit {
    */
   onCloseSidebar(): void {
     this.sidebarOpen = false;
+  }
+
+  /**
+   * Guardar y finalizar - Volver a la lista de documentos
+   */
+  saveAndFinish(): void {
+    if (!this.document || !this.document.pdf_url) {
+      this.notificationService.showWarning('Debes adjuntar un PDF primero');
+      return;
+    }
+
+    this.isSaving = true;
+
+    // Mostrar mensaje de éxito
+    this.notificationService.showSuccess('✅ Documento guardado exitosamente');
+    
+    // Navegar a la lista de documentos
+    setTimeout(() => {
+      this.router.navigate(['/documents']);
+    }, 500);
+  }
+
+  /**
+   * Cancelar y volver a la lista sin guardar
+   */
+  cancelAndReturn(): void {
+    if (this.document && !this.document.pdf_url) {
+      // Si no se adjuntó PDF, advertir
+      if (confirm('¿Estás seguro? El documento quedará sin PDF adjunto.')) {
+        this.router.navigate(['/documents']);
+      }
+    } else {
+      this.router.navigate(['/documents']);
+    }
   }
 }
 

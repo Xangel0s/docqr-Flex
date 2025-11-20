@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use App\Helpers\CacheHelper;
 
 /**
  * Controlador para embebir QR en PDF con posición específica
@@ -58,14 +59,16 @@ class EmbedController extends Controller
             // Buscar el archivo QR (incluyendo eliminados con soft delete)
             $qrId = $request->input('qr_id');
             
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en embed:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
                 ], 400);
             }
+            
+            // Aumentar límites para procesar PDFs grandes (hasta 500MB)
+            ini_set('memory_limit', '1024M'); // 1GB para PDFs muy grandes
+            set_time_limit(600); // 10 minutos para PDFs grandes
             
             $qrFile = QrFile::withTrashed()->where('qr_id', $qrId)->first();
 
@@ -86,33 +89,17 @@ class EmbedController extends Controller
             // Si el documento está eliminado (soft delete), restaurarlo
             if ($qrFile->trashed()) {
                 $qrFile->restore();
-                Log::info('Documento restaurado desde soft delete:', ['qr_id' => $qrId]);
             }
-
-            // Verificar que el archivo PDF existe
-            // IMPORTANTE: Siempre usar el PDF original para reposicionar el QR
-            // Si usamos el PDF final, estaríamos agregando un QR sobre otro QR
+            
             $pdfPathToUse = null;
             $pdfDiskToUse = null;
             
-            // PRIORIDAD 1: Usar PDF original si existe físicamente
             if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
                 $pdfPathToUse = $qrFile->file_path;
                 $pdfDiskToUse = 'local';
-                Log::info('Usando PDF original para reposicionar QR:', [
-                    'qr_id' => $qrFile->qr_id,
-                    'file_path' => $qrFile->file_path
-                ]);
-            } 
-            // PRIORIDAD 2: Si el original fue eliminado pero existe el final, usar el final como fallback
-            // (Esto puede pasar si se eliminó el original para ahorrar espacio)
-            elseif ($qrFile->final_path) {
+            } elseif ($qrFile->final_path) {
                 $pdfPathToUse = str_replace('final/', '', $qrFile->final_path);
                 $pdfDiskToUse = 'final';
-                Log::warning('PDF original no encontrado, usando PDF final como fallback:', [
-                    'qr_id' => $qrFile->qr_id,
-                    'final_path' => $qrFile->final_path
-                ]);
             } else {
                 Log::error('El documento no tiene file_path ni final_path:', ['qr_id' => $qrFile->qr_id]);
                 return response()->json([
@@ -121,48 +108,20 @@ class EmbedController extends Controller
                 ], 422);
             }
 
-            // Preparar posición
-            // CRÍTICO: Forzar que width y height sean iguales usando width como referencia
-            // Esto mantiene el tamaño visual original (ej: 125x125, no 131x131)
             $requestWidth = (float) $request->input('width');
             $requestHeight = (float) $request->input('height');
-            
-            // Usar width como referencia para mantener tamaño visual original
-            // Si hay diferencia, usar width (no promedio) para no "crecer" el QR
             $finalDimension = $requestWidth;
-            
-            // Log si hay diferencia para debugging
-            if (abs($requestWidth - $requestHeight) > 0.01) {
-                Log::info('Corrigiendo dimensiones del QR en backend para mantener cuadrado:', [
-                    'original' => ['width' => $requestWidth, 'height' => $requestHeight],
-                    'corregido' => ['width' => $finalDimension, 'height' => $finalDimension],
-                    'nota' => 'Usando width como referencia para mantener tamaño visual'
-                ]);
-            }
             
             $position = [
                 'x' => (float) $request->input('x'),
                 'y' => (float) $request->input('y'),
-                'width' => $finalDimension,   // Usar width como referencia
-                'height' => $finalDimension,  // Forzar igual a width
+                'width' => $finalDimension,
+                'height' => $finalDimension,
             ];
 
-            Log::info('Intentando embebir QR:', [
-                'qr_id' => $qrFile->qr_id,
-                'pdf_path_to_use' => $pdfPathToUse,
-                'pdf_disk_to_use' => $pdfDiskToUse,
-                'position' => $position
-            ]);
-
-            // Validar que la posición esté dentro de los límites
-            // Usar el path correcto según si es final_path o file_path
-            // NOTA: Con SAFE_MARGIN = 0, solo validamos que esté dentro del PDF (sin margen)
             $validationPath = $pdfDiskToUse === 'final' 
                 ? "final/{$pdfPathToUse}" 
                 : $pdfPathToUse;
-                
-            // La validación del margen se hace dentro de PdfProcessorService
-            // Aquí solo validamos que las coordenadas sean válidas
             if ($position['x'] < 0 || $position['y'] < 0 || 
                 $position['width'] < 0 || $position['height'] < 0) {
                 Log::error('Coordenadas inválidas:', [
@@ -201,30 +160,7 @@ class EmbedController extends Controller
                 ]);
             });
             
-            // Invalidar cache de estadísticas cuando se completa un documento (fuera de la transacción)
-            Cache::forget('documents_stats_v2');
-
-            // IMPORTANTE: NO eliminar el PDF original inmediatamente
-            // El editor necesita el PDF original para reposicionar el QR
-            // Solo se eliminará en un proceso de limpieza posterior (ej: después de X días)
-            // Comentado para permitir reposicionamiento del QR
-            /*
-            if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
-                try {
-                    Storage::disk('local')->delete($qrFile->file_path);
-                    Log::info('PDF original eliminado exitosamente:', ['file_path' => $qrFile->file_path]);
-                } catch (\Exception $e) {
-                    Log::warning('No se pudo eliminar PDF original (no crítico):', [
-                        'file_path' => $qrFile->file_path,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
-            */
-            Log::info('PDF original conservado para permitir reposicionamiento del QR', [
-                'qr_id' => $qrFile->qr_id,
-                'file_path' => $qrFile->file_path
-            ]);
+            CacheHelper::invalidateDocumentsCache();
 
             // URL pública del PDF final a través de la API (escalable para producción)
             // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
@@ -255,14 +191,12 @@ class EmbedController extends Controller
                     $qrFile->update(['status' => 'failed']);
                     
                     // Invalidar cache de estadísticas cuando falla un documento
-                    Cache::forget('documents_stats_v2');
+                    CacheHelper::invalidateDocumentsCache();
                 } catch (\Exception $updateError) {
                     Log::error('Error al actualizar estado a failed: ' . $updateError->getMessage());
                 }
             }
 
-            // IMPORTANTE: Devolver el mensaje completo para que el frontend pueda detectar errores de FPDI
-            // El mensaje debe incluir palabras clave como "compression", "FPDI", "not supported by the free parser"
             return response()->json([
                 'success' => false,
                 'message' => $errorMessage, // Mensaje completo sin truncar
@@ -282,11 +216,9 @@ class EmbedController extends Controller
     public function embedPdf(Request $request): JsonResponse
     {
         try {
-            // Validar request
-            // Nota: Las coordenadas pueden tener decimales porque vienen del frontend con precisión
             $validator = Validator::make($request->all(), [
                 'qr_id' => 'required|string|max:255',
-                'pdf' => 'required|file|mimes:pdf|max:10240', // Máximo 10MB
+                'pdf' => 'required|file|mimes:pdf|max:512000', // Máximo 500MB para procesar PDF con QR
                 'x' => 'required|numeric|min:0',
                 'y' => 'required|numeric|min:0',
                 'width' => 'required|numeric|min:50|max:300',
@@ -295,7 +227,8 @@ class EmbedController extends Controller
                 'pdf.required' => 'El archivo PDF es requerido',
                 'pdf.file' => 'El PDF debe ser un archivo válido',
                 'pdf.mimes' => 'El archivo debe ser un PDF',
-                'pdf.max' => 'El archivo PDF no puede exceder 10MB',
+                'pdf.max' => 'El archivo PDF no puede exceder 500MB. Tamaño actual: ' . 
+                    ($request->hasFile('pdf') ? round($request->file('pdf')->getSize() / 1024 / 1024, 2) . 'MB' : 'N/A'),
             ]);
 
             if ($validator->fails()) {
@@ -316,14 +249,16 @@ class EmbedController extends Controller
             // Buscar el archivo QR
             $qrId = $request->input('qr_id');
             
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en embedPdf:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
                 ], 400);
             }
+            
+            // Aumentar límites para procesar PDFs grandes (hasta 500MB)
+            ini_set('memory_limit', '1024M'); // 1GB para PDFs muy grandes
+            set_time_limit(600); // 10 minutos para PDFs grandes
             
             $qrFile = QrFile::withTrashed()->where('qr_id', $qrId)->first();
 
@@ -337,10 +272,7 @@ class EmbedController extends Controller
             // Si el documento está eliminado (soft delete), restaurarlo
             if ($qrFile->trashed()) {
                 $qrFile->restore();
-                Log::info('Documento restaurado desde soft delete:', ['qr_id' => $qrId]);
             }
-
-            // Guardar el PDF modificado
             // El frontend envía un Blob como archivo en FormData
             $pdfFile = $request->file('pdf');
             
@@ -392,17 +324,8 @@ class EmbedController extends Controller
                     throw $e;
                 }
                 
-                Log::info('PDF recibido para procesamiento:', [
-                    'qr_id' => $qrId,
-                    'page_count' => $pageCount,
-                    'file_size' => strlen($pdfContent)
-                ]);
                 
                 if ($pageCount > 1) {
-                    Log::warning('PDF recibido tiene más de una página, se creará uno nuevo con solo la primera', [
-                        'qr_id' => $qrId,
-                        'page_count' => $pageCount
-                    ]);
                     
                     // Crear un nuevo PDF con solo la primera página
                     $newPdf = new \setasign\Fpdi\Tcpdf\Fpdi();
@@ -419,15 +342,6 @@ class EmbedController extends Controller
                     // Obtener el contenido del nuevo PDF (solo con 1 página)
                     $pdfContent = $newPdf->Output('', 'S'); // 'S' = string output
                     
-                    Log::info('PDF procesado: creado nuevo PDF con solo 1 página', [
-                        'qr_id' => $qrId,
-                        'new_page_count' => 1,
-                        'new_file_size' => strlen($pdfContent)
-                    ]);
-                } else {
-                    Log::info('PDF recibido ya tiene solo 1 página, se usa directamente', [
-                        'qr_id' => $qrId
-                    ]);
                 }
             } catch (\Exception $e) {
                 Log::error('Error al procesar PDF recibido, se usará el PDF original:', [
@@ -453,17 +367,9 @@ class EmbedController extends Controller
                         'page_count' => $verifyPageCount,
                         'final_path' => $finalPath
                     ]);
-                } else {
-                    Log::info('PDF guardado correctamente con 1 página', [
-                        'qr_id' => $qrId,
-                        'page_count' => $verifyPageCount
-                    ]);
                 }
             } catch (\Exception $e) {
-                Log::warning('No se pudo verificar el número de páginas del PDF guardado', [
-                    'qr_id' => $qrId,
-                    'error' => $e->getMessage()
-                ]);
+                // No crítico si no se puede verificar
             }
 
             // Preparar posición
@@ -476,14 +382,6 @@ class EmbedController extends Controller
             // Si hay diferencia, usar width (no promedio) para no "crecer" el QR
             $finalDimension = $requestWidth;
             
-            // Log si hay diferencia para debugging
-            if (abs($requestWidth - $requestHeight) > 0.01) {
-                Log::info('Corrigiendo dimensiones del QR en backend (embedPdf) para mantener cuadrado:', [
-                    'original' => ['width' => $requestWidth, 'height' => $requestHeight],
-                    'corregido' => ['width' => $finalDimension, 'height' => $finalDimension],
-                    'nota' => 'Usando width como referencia para mantener tamaño visual'
-                ]);
-            }
             
             $position = [
                 'x' => (float) $request->input('x'),
@@ -497,13 +395,8 @@ class EmbedController extends Controller
             // El frontend envía coordenadas en el espacio estándar 595x842
             $SAFE_MARGIN = 0; // 0px de margen = libertad total para colocar el QR
             
-            // Solo validar que las coordenadas sean válidas (no negativas)
             if ($position['x'] < 0 || $position['y'] < 0 || 
                 $position['width'] < 0 || $position['height'] < 0) {
-                Log::warning('Coordenadas del QR inválidas', [
-                    'qr_id' => $qrId,
-                    'position' => $position
-                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Las coordenadas del QR son inválidas'
@@ -519,31 +412,17 @@ class EmbedController extends Controller
                 ]);
             });
             
-            // Invalidar cache de estadísticas cuando se completa un documento (fuera de la transacción)
-            Cache::forget('documents_stats_v2');
+            CacheHelper::invalidateDocumentsCache();
 
-            // Eliminar PDF original (solo el archivo físico, no actualizar file_path en BD)
             if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
                 try {
                     Storage::disk('local')->delete($qrFile->file_path);
-                    Log::info('PDF original eliminado exitosamente:', ['file_path' => $qrFile->file_path]);
                 } catch (\Exception $e) {
-                    Log::warning('No se pudo eliminar PDF original (no crítico):', [
-                        'file_path' => $qrFile->file_path,
-                        'error' => $e->getMessage()
-                    ]);
+                    // No crítico si no se puede eliminar
                 }
             }
 
-            // URL pública del PDF final a través de la API (escalable para producción)
-            // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
             $finalUrl = \App\Helpers\UrlHelper::url("/api/files/pdf/{$qrFile->qr_id}", $request);
-
-            Log::info('PDF modificado con pdf-lib guardado exitosamente:', [
-                'qr_id' => $qrId,
-                'final_path' => $finalPath,
-                'position' => $position
-            ]);
 
             return response()->json([
                 'success' => true,

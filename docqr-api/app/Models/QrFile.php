@@ -67,7 +67,6 @@ class QrFile extends Model
      */
     public function getViewUrlAttribute(): string
     {
-        // Usar helper que respeta el protocolo de la solicitud actual (HTTPS si viene de ngrok)
         return \App\Helpers\UrlHelper::url("/api/view/{$this->qr_id}", request());
     }
 
@@ -77,7 +76,8 @@ class QrFile extends Model
     public function incrementScanCount(): void
     {
         $this->increment('scan_count');
-        $this->update(['last_scanned_at' => now()]);
+        $this->last_scanned_at = now();
+        $this->save();
     }
 
     /**
@@ -106,18 +106,15 @@ class QrFile extends Model
      */
     public static function extractDocumentType(string $folderName): string
     {
-        // Extraer las primeras letras antes del guion
         $parts = explode('-', $folderName);
         $type = strtoupper(trim($parts[0] ?? ''));
         
-        // Validar que sea uno de los tipos permitidos
         $allowedTypes = ['CE', 'IN', 'SU'];
         
         if (in_array($type, $allowedTypes)) {
             return $type;
         }
         
-        // Si no coincide, usar "OTROS" como carpeta por defecto
         return 'OTROS';
     }
 }

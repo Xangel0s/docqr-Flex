@@ -68,20 +68,6 @@
               "extractLicenses": false,
               "sourceMap": true,
               "namedChunks": true
-            },
-            "ngrok": {
-              "fileReplacements": [
-                {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.ngrok.ts"
-                }
-              ],
-              "buildOptimizer": false,
-              "optimization": false,
-              "vendorChunk": true,
-              "extractLicenses": false,
-              "sourceMap": true,
-              "namedChunks": true
             }
           },
           "defaultConfiguration": "production"
@@ -94,9 +80,6 @@
             },
             "development": {
               "buildTarget": "docqr-frontend:build:development"
-            },
-            "ngrok": {
-              "buildTarget": "docqr-frontend:build:ngrok"
             }
           },
           "defaultConfiguration": "development"

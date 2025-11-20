@@ -95,7 +95,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     this.routerSubscription = this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe((event: any) => {
-        // Si volvemos a la lista desde otra ruta, recargar documentos solo si es necesario
         if (event.url === '/documents' || event.urlAfterRedirects === '/documents') {
           this.loadDocuments(false); // No forzar, usar caché si está disponible
         }
@@ -167,7 +166,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
           this.stats = {
             total: response.data.total_documents,
             totalScans: response.data.total_scans,
-            errors: 0, // TODO: calcular errores
+            errors: 0,
             pending: response.data.pending_documents
           };
         }
@@ -336,7 +335,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     this.editOptionModalOpen = false;
     
     if (editType === 'qr_position') {
-      // Detectar si el documento fue creado con el método "Adjuntar"
       // Si no tiene final_pdf_url, significa que es un documento adjunto
       const isAttachedDocument = !documentToEdit.final_pdf_url;
       
@@ -471,7 +469,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success && response.data) {
           const updatedDoc = response.data;
-          // Usar el documento actualizado del backend
           const pdfUrl = updatedDoc.final_pdf_url || updatedDoc.pdf_url;
           
           if (!pdfUrl) {
@@ -483,7 +480,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
             // Agregar timestamp para evitar caché del navegador
             const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
             
-            // Usar fetch con blob para forzar la descarga (no abrir pestaña, no cambiar de página)
             fetch(urlWithCacheBuster)
               .then(response => {
                 if (!response.ok) {
@@ -526,7 +522,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
             return;
           }
           
-          // Usar fetch con blob para forzar la descarga
           const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
           fetch(urlWithCacheBuster)
             .then(response => {
@@ -609,6 +604,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
   /**
    * Confirmar eliminación de documento
+   * Optimizado para eliminación INSTANTÁNEA (optimistic update + recalcular paginación)
    */
   confirmDelete(): void {
     if (!this.documentToDelete) {
@@ -617,21 +613,52 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
     const documentId = this.documentToDelete.id;
     const documentName = this.documentToDelete.original_filename;
+    const documentIndex = this.documents.findIndex(d => d.id === documentId);
 
+    // ✅ PASO 1: Eliminar INMEDIATAMENTE de la lista (instantáneo)
+    if (documentIndex !== -1) {
+      this.documents.splice(documentIndex, 1);
+    }
+
+    // ✅ PASO 2: Cerrar modal INMEDIATAMENTE (sin esperar servidor)
+    this.closeDeleteModal();
+
+    // ✅ PASO 3: Actualizar contadores localmente (instantáneo)
+    this.totalDocuments = Math.max(0, this.totalDocuments - 1);
+    this.stats.total = Math.max(0, this.stats.total - 1);
+
+    // ✅ PASO 4: Mostrar notificación inmediata
+    this.notificationService.showSuccess(`✅ Documento "${documentName}" eliminado`);
+
+    // ✅ PASO 5: Ajustar paginación si la página quedó vacía
+    if (this.documents.length === 0 && this.currentPage > 1) {
+      this.currentPage--;
+      this.loadDocuments(false); // Cargar página anterior
+    } else if (this.documents.length === 0 && this.currentPage === 1) {
+      // Si era la única página y quedó vacía, mostrar mensaje
+      this.loading = false;
+    }
+
+    // ✅ PASO 6: Enviar petición al servidor (en background, NO bloquea la UI)
     this.docqrService.deleteDocument(documentId).subscribe({
       next: (response) => {
         if (response.success) {
-          this.notificationService.showSuccess(`✅ Documento "${documentName}" eliminado exitosamente`);
-          this.closeDeleteModal();
-          this.loadDocuments(true); // Forzar recarga después de eliminar
+          // Sincronizar con servidor en background (sin notificación adicional)
+          // Solo recargar estadísticas para asegurar que estén actualizadas
           this.loadStats();
         } else {
-          this.notificationService.showError(response.message || 'Error al eliminar documento');
+          // Si falla en el servidor (raro), revertir
+          this.notificationService.showWarning('Error al eliminar en servidor, recargando...');
+          this.loadDocuments(true);
+          this.loadStats();
         }
       },
       error: (error) => {
+        // Si falla la conexión, revertir
         console.error('Error al eliminar documento:', error);
-        this.notificationService.showError('Error al eliminar documento');
+        this.notificationService.showWarning('Error de conexión, recargando...');
+        this.loadDocuments(true);
+        this.loadStats();
       }
     });
   }
@@ -740,7 +767,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       'URL PDF Final'
     ];
 
-    // Separador: punto y coma para Excel en español
     const separator = ';';
 
     // Crear filas de datos
@@ -799,7 +825,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   private escapeCSV(value: string, separator: string = ';'): string {
     if (!value) return '';
     
-    // Si contiene el separador, comillas o saltos de línea, envolver en comillas y escapar comillas internas
     if (value.includes(separator) || value.includes('"') || value.includes('\n') || value.includes('\r')) {
       return `"${value.replace(/"/g, '""')}"`;
     }

@@ -24,8 +24,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('qr_files', function (Blueprint $table) {
-            // Revertir: hacer qr_path NOT NULL nuevamente
-            // NOTA: Esto puede fallar si hay registros con qr_path NULL
             $table->string('qr_path', 500)->nullable(false)->change();
         });
     }

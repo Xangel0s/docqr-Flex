@@ -27,9 +27,7 @@ class FileController extends Controller
     public function servePdf(string $qrId, Request $request): Response|JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en servePdf:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
@@ -38,12 +36,9 @@ class FileController extends Controller
             
             $qrFile = QrFile::where('qr_id', $qrId)->firstOrFail();
 
-            // Usar helper compartido para determinar qué archivo servir
-            // Priorización: final_path > file_path > rutas alternativas
             $pdfInfo = \App\Helpers\PdfPathHelper::getPdfPathToServe($qrFile);
             
             if (!$pdfInfo) {
-                // Devolver JSON en lugar de HTML para peticiones de API
                 if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
                     return response()->json([
                         'success' => false,
@@ -82,8 +77,6 @@ class FileController extends Controller
             
             $etag = md5($fullPath . filemtime($fullPath));
             
-            // CRÍTICO: Forzar Content-Type como PDF, nunca HTML
-            // Esto previene que el navegador interprete el PDF como HTML
             $response = response($content, 200, [
                 'Content-Type' => 'application/pdf',
                 'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
@@ -94,15 +87,21 @@ class FileController extends Controller
                 'X-Content-Security-Policy' => "default-src 'self'",
             ]);
             
-            // Añadir headers CORS explícitamente (igual que serveOriginalPdf)
             $origin = $request->header('Origin');
-            $allowedOrigins = ['https://docqr.geofal.com.pe', 'http://localhost:4200'];
-            if ($origin && (in_array($origin, $allowedOrigins) || app()->environment('local'))) {
+            $allowedOrigins = config('cors.allowed_origins', []);
+            if (is_callable($allowedOrigins)) {
+                $allowedOrigins = $allowedOrigins();
+            }
+            $isOriginAllowed = in_array($origin, $allowedOrigins) || 
+                              in_array('*', $allowedOrigins) || 
+                              app()->environment('local');
+            
+            if ($origin && $isOriginAllowed) {
                 $response->header('Access-Control-Allow-Origin', $origin);
                 $response->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With');
+                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin');
                 $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
-                $response->header('Access-Control-Allow-Credentials', 'false');
+                $response->header('Access-Control-Allow-Credentials', 'true');
             }
             
             if ($pragma) {
@@ -111,9 +110,6 @@ class FileController extends Controller
             if ($expires) {
                 $response->header('Expires', $expires);
             }
-            
-            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
-            // Solo mantenemos Cache-Control específico para este endpoint
             
             if ($request->header('If-None-Match') === $etag) {
                 return response('', 304)
@@ -124,11 +120,10 @@ class FileController extends Controller
             return $response;
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('PDF no encontrado (documento no existe en BD):', [
+            Log::error('PDF no encontrado (documento no existe en BD):', [
                 'qr_id' => $qrId,
                 'error' => $e->getMessage()
             ]);
-            // Devolver JSON en lugar de HTML para peticiones de API
             if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
                 return response()->json([
                     'success' => false,
@@ -164,9 +159,7 @@ class FileController extends Controller
     public function serveOriginalPdf(string $qrId, Request $request): Response|JsonResponse
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en serveOriginalPdf:', ['qr_id' => $qrId]);
                 return response()->json([
                     'success' => false,
                     'message' => 'ID de documento inválido'
@@ -189,14 +182,12 @@ class FileController extends Controller
             $fullPath = Storage::disk('local')->path($qrFile->file_path);
 
             if (!file_exists($fullPath)) {
-                // Intentar buscar en rutas alternativas (especialmente para documentos antiguos)
                 $possiblePaths = [
                     $fullPath,
                     storage_path('app/' . $qrFile->file_path),
                     base_path('storage/app/' . $qrFile->file_path),
                 ];
                 
-                // Si file_path contiene "uploads/", buscar también sin el prefijo
                 if (str_contains($qrFile->file_path, 'uploads/')) {
                     $pathWithoutUploads = str_replace('uploads/', '', $qrFile->file_path);
                     $possiblePaths[] = storage_path('app/uploads/' . $pathWithoutUploads);
@@ -204,14 +195,12 @@ class FileController extends Controller
                     $possiblePaths[] = public_path('uploads/' . $pathWithoutUploads);
                 }
                 
-                // Buscar por nombre de archivo en uploads si no se encuentra
                 if ($qrFile->original_filename) {
                     $filename = basename($qrFile->original_filename);
                     $possiblePaths[] = storage_path('app/uploads/' . $filename);
                     $possiblePaths[] = base_path('storage/app/uploads/' . $filename);
                     $possiblePaths[] = public_path('uploads/' . $filename);
                     
-                    // Buscar recursivamente en uploads
                     $uploadsDir = storage_path('app/uploads');
                     if (is_dir($uploadsDir)) {
                         $iterator = new \RecursiveIteratorIterator(
@@ -289,8 +278,6 @@ class FileController extends Controller
             
             $etag = md5($fullPath . (file_exists($fullPath) ? filemtime($fullPath) : 0));
             
-            // CRÍTICO: Forzar Content-Type como PDF, nunca HTML
-            // Esto previene que el navegador interprete el PDF como HTML
             $response = response($content, 200, [
                 'Content-Type' => 'application/pdf',
                 'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
@@ -302,15 +289,21 @@ class FileController extends Controller
             ]);
             
             $origin = $request->header('Origin');
-            if ($origin) {
+            $allowedOrigins = config('cors.allowed_origins', []);
+            if (is_callable($allowedOrigins)) {
+                $allowedOrigins = $allowedOrigins();
+            }
+            $isOriginAllowed = in_array($origin, $allowedOrigins) || 
+                              in_array('*', $allowedOrigins) || 
+                              app()->environment('local');
+            
+            if ($origin && $isOriginAllowed) {
                 $response->header('Access-Control-Allow-Origin', $origin);
                 $response->header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Requested-With, Authorization');
-                $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition');
+                $response->header('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Requested-With, Authorization, X-Frontend-Origin');
+                $response->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
+                $response->header('Access-Control-Allow-Credentials', 'true');
             }
-            
-            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
-            // El caso especial de ngrok también se maneja en SecurityHeaders
             
             if ($pragma) {
                 $response->header('Pragma', $pragma);
@@ -328,11 +321,10 @@ class FileController extends Controller
             return $response;
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            Log::warning('PDF original no encontrado (documento no existe en BD):', [
+            Log::error('PDF original no encontrado (documento no existe en BD):', [
                 'qr_id' => $qrId,
                 'error' => $e->getMessage()
             ]);
-            // Devolver JSON en lugar de HTML para peticiones de API
             if ($request->expectsJson() || $request->wantsJson() || str_starts_with($request->path(), 'api/')) {
                 return response()->json([
                     'success' => false,
@@ -367,9 +359,7 @@ class FileController extends Controller
     public function serveQr(string $qrId, Request $request): Response
     {
         try {
-            // Validar qr_id contra inyección SQL
             if (!\App\Helpers\QrIdValidator::isValid($qrId)) {
-                Log::warning('Intento de acceso con qr_id inválido en serveQr:', ['qr_id' => $qrId]);
                 abort(400, 'ID de documento inválido');
             }
             
@@ -379,31 +369,23 @@ class FileController extends Controller
                 abort(404, 'Código QR no encontrado');
             }
 
-            // Obtener la ruta completa del QR
             $qrFilename = basename($qrFile->qr_path);
             $fullPath = Storage::disk('qrcodes')->path($qrFilename);
 
-            // Verificar que el archivo existe
             if (!file_exists($fullPath)) {
                 abort(404, 'Código QR no encontrado');
             }
 
-            // Leer el contenido del archivo
             $content = file_get_contents($fullPath);
-
-            // Sanitizar nombre de archivo para seguridad
             $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFilename);
             
-            // Estrategia de caché para imágenes QR (estables)
             $isProduction = app()->environment('production');
             $cacheControl = $isProduction 
-                ? 'public, max-age=86400, immutable' // 24 horas en producción
-                : 'public, max-age=3600'; // 1 hora en desarrollo
+                ? 'public, max-age=86400, immutable'
+                : 'public, max-age=3600';
             
-            // Generar ETag
             $etag = md5($fullPath . filemtime($fullPath));
             
-            // Retornar respuesta con headers apropiados para PNG
             $response = response($content, 200)
                 ->header('Content-Type', 'image/png')
                 ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
@@ -412,9 +394,6 @@ class FileController extends Controller
                 ->header('ETag', $etag)
                 ->header('X-Content-Type-Options', 'nosniff');
             
-            // Headers de seguridad removidos - se manejan en SecurityHeaders middleware
-            
-            // Validar ETag del cliente
             if ($request->header('If-None-Match') === $etag) {
                 return response('', 304)
                     ->header('ETag', $etag)

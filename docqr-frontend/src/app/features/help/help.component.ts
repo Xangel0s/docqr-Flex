@@ -38,7 +38,6 @@ export class HelpComponent implements OnInit {
    */
   openVideoModal(): void {
     if (!this.youtubeVideoUrl) {
-      // Si no hay URL configurada, mostrar notificación
       this.notificationService.showInfo('El video tutorial aún no está disponible. Se agregará próximamente.');
       return;
     }

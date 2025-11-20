@@ -31,7 +31,6 @@ export class LoginComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    // Si ya está autenticado, redirigir al dashboard
     if (this.authService.isAuthenticated()) {
       this.router.navigate(['/']);
     }
@@ -51,8 +50,6 @@ export class LoginComponent implements OnInit {
     this.authService.login(username, password).subscribe({
       next: (response) => {
         if (response && response.success) {
-          // El token ya se guardó en el tap() del servicio (síncrono)
-          // Usar setTimeout para asegurar que localStorage se haya actualizado
           setTimeout(() => {
             // Verificar que esté guardado antes de navegar
             if (this.authService.isAuthenticated()) {
@@ -62,11 +59,9 @@ export class LoginComponent implements OnInit {
               this.router.navigate(['/']).then(() => {
                 // Navegación exitosa
               }).catch(() => {
-                // Si la navegación falla, usar window.location como fallback
                 window.location.href = '/';
               });
             } else {
-              // Si no hay token después del login exitoso, hay un problema
               if (!environment.production) {
                 console.error('Login exitoso pero token no guardado. Respuesta:', response);
                 console.error('Token en localStorage:', localStorage.getItem('geofal_token'));

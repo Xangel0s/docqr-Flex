@@ -135,9 +135,7 @@ class CompressOldDocuments extends Command
                 }
             }
             
-            // Si no se pudo extraer mes de la ruta (estructura antigua), intentar del nombre
             if ($monthYear === Carbon::parse($doc->created_at)->format('Ym')) {
-                // No se extrajo de la ruta, intentar del nombre del archivo
                 $filename = basename($doc->final_path);
                 if (preg_match('/^(\d{8})-(\d{6})-\w+-/', $filename, $matches)) {
                     // Formato antiguo: {random}-{YYYYMM}-{qr_id}-...
@@ -220,16 +218,10 @@ class CompressOldDocuments extends Command
         $zip->close();
 
         if ($added === 0) {
-            // Si no se agregó nada, eliminar el ZIP vacío
             @unlink($zipPath);
             return false;
         }
 
-        // Marcar documentos como archivados (opcional: agregar columna 'archived' a la tabla)
-        // Por ahora, solo guardamos la referencia del ZIP en un campo JSON o similar
-        // O simplemente los eliminamos físicamente después de comprimir
-
-        // Eliminar PDFs finales originales (ya están en el ZIP)
         foreach ($documents as $doc) {
             if ($doc->final_path) {
                 $finalPath = str_replace('final/', '', $doc->final_path);

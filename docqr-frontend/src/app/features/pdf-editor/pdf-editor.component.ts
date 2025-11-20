@@ -260,13 +260,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const documentTitle = this.document.original_filename || this.document.folder_name || 'Documento';
       this.titleService.setTitle(`${documentTitle} - Editor - Geofal`);
 
-      // URLs - Usar PDF original para el editor (sin QR)
-      // Si existe pdf_original_url, usarlo; si no, usar pdf_url como fallback
-      // IMPORTANTE: Agregar cache buster para evitar caché del navegador
-      // IMPORTANTE: Convertir URLs HTTP a relativas si estamos en HTTPS (ngrok)
       const basePdfUrl = this.document.pdf_original_url || this.document.pdf_url || '';
       this.pdfUrl = basePdfUrl ? this.convertToRelativeIfHttps(`${basePdfUrl}?t=${Date.now()}&editor=true`) : '';
-      // Agregar cache buster para evitar que se muestre QR antiguo en caché
       const baseQrUrl = this.convertToRelativeIfHttps(this.document.qr_image_url || '');
       const separator = baseQrUrl.includes('?') ? '&' : '?';
       this.qrImageUrl = `${baseQrUrl}${separator}t=${Date.now()}`;
@@ -357,9 +352,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           // Continuar de todas formas, PDF.js intentará cargar
         }
         
-        // Configurar opciones para PDF.js con mejor manejo de errores
-        // IMPORTANTE: PDF.js usa XMLHttpRequest internamente, que puede tener problemas con CORS
-        // Usar fetch en lugar de XMLHttpRequest para mejor compatibilidad con CORS
         const loadingTask = pdfjsLib.getDocument({
           url: this.pdfUrl,
           verbosity: 0, // Reducir warnings en consola
@@ -423,8 +415,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         crossOrigin: 'anonymous'
       });
 
-      // Configurar PDF como objeto bloqueado (no interactivo)
-      // IMPORTANTE: Asegurar que la imagen tenga el tamaño correcto del canvas
       pdfImage.set({
         left: 0,
         top: 0,
@@ -643,14 +633,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         width = qrWidthInCanvas;
         height = qrHeightInCanvas;
         
-        // Log para debugging (solo en desarrollo y si hay diferencia significativa)
-        if (!environment.production && (Math.abs(standardX - x) > 1 || Math.abs(standardY - y) > 1)) {
-          console.log('Convertiendo coordenadas guardadas al espacio del canvas:', {
-            guardado: { x: standardX, y: standardY, width: standardWidth, height: standardHeight },
-            canvas: { x, y, width, height },
-            pdfDimensions: this.pdfDimensions
-          });
-        }
       }
 
       // Obtener dimensiones originales del QR (debe ser cuadrado 300x300)
@@ -664,27 +646,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       let finalWidth = width;
       let finalHeight = width; // Usar width como referencia, no promedio
       
-      // Si hay diferencia significativa, corregir inmediatamente
       const heightDiff = Math.abs(height - width) / Math.max(width, 1);
       
-      // Log solo en desarrollo
-      if (!environment.production && heightDiff > 0.01) {
-        console.log('Corrigiendo dimensiones del QR al cargar para mantener relación de aspecto:', {
-          original: { width, height },
-          corregido: { width: finalWidth, height: finalHeight },
-          diferencia: { heightDiff: (heightDiff * 100).toFixed(2) + '%' },
-          nota: 'Usando width como referencia para mantener tamaño visual original'
-        });
-      }
-      
-      // Calcular escala uniforme para mantener relación de aspecto
-      // Usar las dimensiones corregidas (ya son iguales)
       const uniformScale = finalWidth / originalQrWidth;
       
-      // Configurar objeto QR con las coordenadas exactas y relación de aspecto preservada
-      // IMPORTANTE: Volver a usar 'left' y 'top' como origen (por defecto)
-      // porque 'center' causa que el QR se mueva completamente al centro
-      // En su lugar, usaremos una estrategia diferente para prevenir el movimiento
       const currentWidth = originalQrWidth * uniformScale;
       const currentHeight = originalQrHeight * uniformScale;
       
@@ -706,11 +671,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         maxScaleLimit: 300 / originalQrWidth // Tamaño máximo: 300px
       });
       
-      // Agregar listeners para mantener relación de aspecto SIEMPRE
-      // Listener durante el escalado - PREVENIR que se rompa cuando es muy pequeño
-      // IMPORTANTE: Guardar posición ANTES de modificar para no mover el QR
-      // Usar coordenadas directas del objeto (left/top) en lugar de getBoundingRect()
-      // porque getBoundingRect() puede incluir controles y causar movimiento
       img.on('scaling', (e: any) => {
         // Prevenir correcciones múltiples simultáneas
         if (this.isCorrectingQrPosition) {
@@ -911,8 +871,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     const qrWidth = boundingRect.width;
     const qrHeight = boundingRect.height;
 
-    // IMPORTANTE: Restringir el QR al área REAL del PDF (no al canvas completo)
-    // El PDF puede ser más pequeño que A4 y está centrado con offsets
     const pdfRealWidth = this.pdfDimensions.originalWidth || this.STANDARD_PDF_WIDTH;
     const pdfRealHeight = this.pdfDimensions.originalHeight || this.STANDARD_PDF_HEIGHT;
     const pdfScale = this.pdfDimensions.scale || 1.0;
@@ -1006,8 +964,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const now = Date.now();
       if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
         this.lastSizeWarningTime = now;
-        // Log silencioso (solo en desarrollo)
-        // console.log('QR muy pequeño, aplicando tamaño mínimo');
       }
     }
 
@@ -1018,8 +974,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const now = Date.now();
       if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
         this.lastSizeWarningTime = now;
-        // Log silencioso (solo en desarrollo)
-        // console.log('QR muy grande, aplicando tamaño máximo');
       }
     }
     
@@ -1175,15 +1129,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const finalWidth = originalQrWidth * uniformScale;
       const finalHeight = originalQrHeight * uniformScale;
       
-      // Log para debugging solo en desarrollo
-      if (!environment.production && Math.abs(scaleX - scaleY) > 0.01) {
-        console.log('Corrigiendo escala del QR para mantener relación de aspecto al guardar:', {
-          scaleX,
-          scaleY,
-          uniformScale,
-          dimensiones: { width: finalWidth, height: finalHeight }
-        });
-      }
       
       const boundingRect = obj.getBoundingRect();
 
@@ -1196,10 +1141,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       let qrHeightInRealPdf = finalHeight / pdfScale;
       
       // 5. Validar que el QR esté dentro del área real del PDF
-      const tolerance = 1; // 1px de tolerancia
-      if (qrXInRealPdf < -tolerance || qrYInRealPdf < -tolerance || 
-          qrXInRealPdf + qrWidthInRealPdf > pdfRealWidth + tolerance || 
-          qrYInRealPdf + qrHeightInRealPdf > pdfRealHeight + tolerance) {
+      const positionTolerance = 1; // 1px de tolerancia
+      if (qrXInRealPdf < -positionTolerance || qrYInRealPdf < -positionTolerance || 
+          qrXInRealPdf + qrWidthInRealPdf > pdfRealWidth + positionTolerance || 
+          qrYInRealPdf + qrHeightInRealPdf > pdfRealHeight + positionTolerance) {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
@@ -1211,10 +1156,17 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       
       // 6. Convertir al espacio estándar (595x842) para enviar al backend
       // El backend espera coordenadas en el espacio estándar y las convertirá al tamaño real
-      const standardX = (qrXInRealPdf / pdfRealWidth) * this.STANDARD_PDF_WIDTH;
-      const standardY = (qrYInRealPdf / pdfRealHeight) * this.STANDARD_PDF_HEIGHT;
-      const standardWidth = (qrWidthInRealPdf / pdfRealWidth) * this.STANDARD_PDF_WIDTH;
-      const standardHeight = (qrHeightInRealPdf / pdfRealHeight) * this.STANDARD_PDF_HEIGHT;
+      // CRÍTICO: Usar porcentajes para máxima precisión y evitar errores de redondeo
+      const xPercent = qrXInRealPdf / pdfRealWidth;
+      const yPercent = qrYInRealPdf / pdfRealHeight;
+      const widthPercent = qrWidthInRealPdf / pdfRealWidth;
+      const heightPercent = qrHeightInRealPdf / pdfRealHeight;
+      
+      // Aplicar porcentajes al espacio estándar
+      let standardX = xPercent * this.STANDARD_PDF_WIDTH;
+      let standardY = yPercent * this.STANDARD_PDF_HEIGHT;
+      let standardWidth = widthPercent * this.STANDARD_PDF_WIDTH;
+      let standardHeight = heightPercent * this.STANDARD_PDF_HEIGHT;
       
       // CRÍTICO: Forzar que width y height sean iguales usando width como referencia
       // Esto previene que se guarde 125x137 en lugar de 125x125
@@ -1222,14 +1174,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const finalStandardWidth = Math.round(standardWidth * 100) / 100;
       const finalStandardHeight = Math.round(standardWidth * 100) / 100; // Usar width, no promedio
       
-      // Log solo en desarrollo
-      if (!environment.production && Math.abs(standardWidth - standardHeight) > 0.01) {
-        console.log('Corrigiendo dimensiones antes de guardar para mantener cuadrado:', {
-          original: { width: standardWidth, height: standardHeight },
-          corregido: { width: finalStandardWidth, height: finalStandardHeight },
-          nota: 'Usando width como referencia para mantener tamaño visual'
-        });
-      }
+      // Asegurar que las coordenadas estén dentro del espacio estándar (con tolerancia)
+      const roundingTolerance = 0.01; // Tolerancia de 0.01px para errores de redondeo
+      standardX = Math.max(0, Math.min(this.STANDARD_PDF_WIDTH, standardX));
+      standardY = Math.max(0, Math.min(this.STANDARD_PDF_HEIGHT, standardY));
       
       const position = {
         x: Math.round(standardX * 100) / 100, // Redondear a 2 decimales
@@ -1366,11 +1314,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-          // Log silencioso (solo en desarrollo)
-          // console.error('QR fuera del área segura en embedQrWithPdfLib:', {
-          //   pdfX, pdfY, pdfWidth, pdfHeight,
-          //   minX, minY, maxX, maxY
-          // });
         }
         throw new Error('El QR está fuera del área segura. Ajusta la posición en el editor.');
       }
@@ -1397,7 +1340,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-          // console.error('QR fuera de límites del PDF'); // Log silencioso
         this.notificationService.showError('El QR está fuera de los límites del documento. Por favor, ajusta la posición.');
         }
         this.saving = false;
@@ -1434,7 +1376,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-          // console.error('Error: pdf-lib creó páginas adicionales'); // Log silencioso
         }
         
         while (newPdfDoc.getPageCount() > 1) {
@@ -1446,7 +1387,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           const now2 = Date.now();
           if (now2 - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
             this.lastSizeWarningTime = now2;
-            // console.error('Error: No se pudieron eliminar todas las páginas adicionales'); // Log silencioso
           this.notificationService.showError('Error al procesar el PDF. Por favor, intenta ajustar la posición del QR.');
           }
           this.saving = false;
@@ -1460,7 +1400,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-          // console.error('Error: El PDF tiene más de 1 página antes de guardar'); // Log silencioso
         }
         while (newPdfDoc.getPageCount() > 1) {
           newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
@@ -1477,7 +1416,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-          // console.error('Error: El PDF guardado tiene', finalPageCount, 'páginas'); // Log silencioso
         this.notificationService.showError(`Error: El PDF generado tiene ${finalPageCount} páginas. Por favor, ajusta la posición del QR más arriba.`);
         }
         this.saving = false;
@@ -1509,9 +1447,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           }
         },
         error: (error: any) => {
-          console.error('Error al guardar PDF:', error);
+          if (!environment.production) {
+            console.error('Error al guardar PDF:', error);
+          }
           this.notificationService.showError('Error al guardar PDF. Usando método alternativo...');
-          // Fallback al método anterior
           this.savePositionBackend(position);
         }
       });
@@ -1637,7 +1576,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return urlObj.pathname + urlObj.search;
     }
     
-    // Si estamos en HTTPS y la URL es HTTP absoluta, convertir a relativa
     if (window.location.protocol === 'https:' && url.startsWith('http://')) {
       const urlObj = new URL(url);
       return urlObj.pathname + urlObj.search;
@@ -1761,7 +1699,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    // Usar fetch con blob para forzar la descarga
     fetch(this.qrImageUrl)
       .then(response => response.blob())
       .then(blob => {
@@ -1797,7 +1734,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     // Agregar timestamp para evitar caché
     const urlWithCacheBuster = `${this.document.final_pdf_url}?t=${Date.now()}`;
     
-    // Usar fetch con blob para forzar la descarga
     fetch(urlWithCacheBuster)
       .then(response => {
         if (!response.ok) {

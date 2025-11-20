@@ -212,7 +212,6 @@ export class PdfPreviewModalComponent implements OnInit, OnDestroy, OnChanges {
    * Por ahora, estableceremos un valor por defecto o intentaremos obtenerlo
    */
   onPdfLoadComplete(event: any): void {
-    // El evento puede venir como número o como objeto
     if (typeof event === 'number') {
       this.totalPages = event;
     } else if (event && event.pagesCount) {
@@ -220,8 +219,6 @@ export class PdfPreviewModalComponent implements OnInit, OnDestroy, OnChanges {
     } else if (event && typeof event === 'object' && 'pagesCount' in event) {
       this.totalPages = (event as any).pagesCount;
     } else {
-      // Con iframe, establecer un valor por defecto
-      // El usuario puede navegar y el contador se actualizará manualmente
       this.totalPages = this.totalPages || 1;
     }
   }
@@ -249,11 +246,7 @@ export class PdfPreviewModalComponent implements OnInit, OnDestroy, OnChanges {
     }
     
     // Limpiar la URL: remover fragmentos (#) y parámetros de zoom/página existentes
-    let cleanUrl = this.pdfUrl.split('#')[0]; // Remover fragmento si existe
-    
-    // Para PDFs, no agregar parámetros de página/zoom en la URL
-    // Los navegadores manejan PDFs directamente sin estos parámetros
-    // Si se necesita zoom, se puede hacer con CSS transform en el iframe
+    let cleanUrl = this.pdfUrl.split('#')[0];
     return cleanUrl;
   }
 

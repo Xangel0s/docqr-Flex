@@ -24,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleCorsOptions::class, // Manejar OPTIONS antes que HandleCors
             \Illuminate\Http\Middleware\HandleCors::class,
             \App\Http\Middleware\SecurityHeaders::class, // Headers de seguridad
+            \App\Http\Middleware\CompressResponse::class, // Comprimir respuestas
+            \Illuminate\Session\Middleware\StartSession::class, // Iniciar sesión para API
         ]);
         
         // Deshabilitar FrameGuard completamente para permitir iframes
