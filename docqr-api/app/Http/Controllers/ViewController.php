@@ -84,18 +84,10 @@ class ViewController extends Controller
                 ->header('Expires', '0')
                 ->header('X-Content-Type-Options', 'nosniff');
             
-            // Headers de seguridad para producción
-            // En producción, SecurityHeaders middleware aplica la mayoría de headers
-            // Aquí solo agregamos headers específicos para PDFs embebidos
-            if (config('app.env') === 'production') {
-                // Permitir iframe solo desde el dominio del frontend
-                $frontendUrl = 'https://docqr.geofal.com.pe';
-                $response->header('X-Frame-Options', 'SAMEORIGIN');
-                $response->header('Content-Security-Policy', "frame-ancestors 'self' {$frontendUrl};");
-            } else {
-                // En desarrollo, permitir más flexibilidad
-                $response->header('X-Frame-Options', 'SAMEORIGIN');
-            }
+            // Headers de seguridad para PDFs embebidos
+            $frontendUrl = env('FRONTEND_URL', 'https://docqr.geofal.com.pe');
+            $response->header('X-Frame-Options', 'SAMEORIGIN');
+            $response->header('Content-Security-Policy', "frame-ancestors 'self' {$frontendUrl};");
             
             return $response;
 

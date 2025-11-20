@@ -41,7 +41,7 @@ class HandleCorsOptions
                 ->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin')
                 ->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag')
                 ->header('Access-Control-Max-Age', '86400')
-                ->header('Access-Control-Allow-Credentials', 'false');
+                ->header('Access-Control-Allow-Credentials', 'true'); // CRÍTICO: Permitir credenciales
         }
 
         // Para todas las demás peticiones, procesar y agregar headers CORS a la respuesta
@@ -53,14 +53,14 @@ class HandleCorsOptions
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
-            $response->headers->set('Access-Control-Allow-Credentials', 'false');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true'); // CRÍTICO: Permitir credenciales
         } elseif (in_array('*', $allowedOrigins)) {
-            // Si se permite cualquier origen, usar '*'
+            // NOTA: No se puede usar 'Access-Control-Allow-Credentials: true' con '*'
+            // Por seguridad, en este caso no enviamos el header de credentials
             $response->headers->set('Access-Control-Allow-Origin', '*');
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
             $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
-            $response->headers->set('Access-Control-Allow-Credentials', 'false');
         }
 
         return $response;
@@ -71,21 +71,7 @@ class HandleCorsOptions
      */
     private function getAllowedOrigins(): array
     {
-        // Leer desde config/cors.php
-        $configOrigins = config('cors.allowed_origins', []);
-        
-        // Si está en producción, usar solo los orígenes específicos
-        // Si está en desarrollo, permitir cualquier origen
-        if (app()->environment('production')) {
-            $filtered = array_filter($configOrigins, function($origin) {
-                return $origin !== '*';
-            });
-            // Si no hay orígenes específicos, usar los de la configuración tal cual
-            return !empty($filtered) ? array_values($filtered) : $configOrigins;
-        }
-        
-        // En desarrollo, permitir cualquier origen
-        return ['*'];
+        return config('cors.allowed_origins', []);
     }
     
     /**
