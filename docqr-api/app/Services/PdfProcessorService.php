@@ -24,7 +24,7 @@ class PdfProcessorService
      * @return string Ruta relativa del PDF final (storage/final/...)
      * @throws \Exception Si hay error al procesar el PDF
      */
-    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null, ?string $documentTitle = null, ?string $folderName = null): string
+    public function embedQr(string $pdfPath, string $qrPath, array $position, ?string $pdfDisk = 'local', ?string $qrId = null, ?string $documentTitle = null, ?string $folderName = null, ?int $pageNumber = 1): string
     {
         try {
             // Aumentar límites para PDFs grandes (hasta 500MB)
@@ -89,13 +89,24 @@ class PdfProcessorService
                 throw new \Exception("El PDF no tiene páginas válidas");
             }
 
-            // Importar la primera página
-            $tplId = $pdf->importPage(1);
+            // Validar que el número de página sea válido
+            if ($pageNumber < 1 || $pageNumber > $pageCount) {
+                throw new \Exception("Página {$pageNumber} no existe. El PDF tiene {$pageCount} página(s).");
+            }
+
+            // Importar todas las páginas del PDF
+            $pageTemplates = [];
+            $pageSizes = [];
+            for ($i = 1; $i <= $pageCount; $i++) {
+                $tplId = $pdf->importPage($i);
+                $pageTemplates[$i] = $tplId;
+                $pageSizes[$i] = $pdf->getTemplateSize($tplId);
+            }
             
-            // Obtener dimensiones de la página
-            $size = $pdf->getTemplateSize($tplId);
-            $pageWidth = $size['width'];
-            $pageHeight = $size['height'];
+            // Obtener dimensiones de la página donde se colocará el QR
+            $targetPageSize = $pageSizes[$pageNumber];
+            $pageWidth = $targetPageSize['width'];
+            $pageHeight = $targetPageSize['height'];
 
             // Convertir posiciones de píxeles del frontend a las unidades del PDF
             // MÉTODO: Usar porcentajes relativos para máxima precisión
@@ -161,22 +172,28 @@ class PdfProcessorService
             // TCPDF puede crear páginas automáticamente si detecta contenido cerca del borde
             $pdf->SetAutoPageBreak(false, 0);
             
-            // CRÍTICO: Agregar SOLO UNA página (la primera del PDF original)
-            // No crear páginas adicionales bajo ninguna circunstancia
-            $pdf->AddPage($size['orientation'], [$pageWidth, $pageHeight]);
+            // Agregar TODAS las páginas del PDF original
+            for ($i = 1; $i <= $pageCount; $i++) {
+                $currentPageSize = $pageSizes[$i];
+                $pdf->AddPage($currentPageSize['orientation'], [$currentPageSize['width'], $currentPageSize['height']]);
+                $pdf->useTemplate($pageTemplates[$i], 0, 0, $currentPageSize['width'], $currentPageSize['height'], true);
+            }
             
-            // Usar la plantilla de la página original
-            $pdf->useTemplate($tplId, 0, 0, $pageWidth, $pageHeight, true);
-            
+            // Verificar que el número de páginas sea correcto
             $pageCountAfterTemplate = $pdf->getNumPages();
-            if ($pageCountAfterTemplate > 1) {
-                Log::error('ERROR: Se crearon páginas adicionales después de useTemplate', [
-                    'page_count' => $pageCountAfterTemplate
+            if ($pageCountAfterTemplate !== $pageCount) {
+                Log::error('ERROR: El número de páginas no coincide después de copiar', [
+                    'expected' => $pageCount,
+                    'actual' => $pageCountAfterTemplate
                 ]);
-                while ($pdf->getNumPages() > 1) {
+                // Intentar corregir eliminando páginas extra
+                while ($pdf->getNumPages() > $pageCount) {
                     $pdf->deletePage($pdf->getNumPages());
                 }
             }
+
+            // Cambiar a la página donde se colocará el QR
+            $pdf->setPage($pageNumber);
 
             // Usar coordenadas exactas del frontend (sin offset de calibración)
             // El frontend calcula las coordenadas correctamente en el espacio estándar (595x842)
@@ -195,6 +212,7 @@ class PdfProcessorService
                     'qrBottom' => $qrBottom, 'qrRight' => $qrRight,
                     'pageWidth' => $pageWidth, 'pageHeight' => $pageHeight,
                     'safeMarginX' => $safeMarginX, 'safeMarginY' => $safeMarginY,
+                    'page_number' => $pageNumber,
                     'withinBounds' => [
                         'x' => $x >= $safeMarginX,
                         'y' => $pdfY >= $safeMarginY,
@@ -205,7 +223,7 @@ class PdfProcessorService
                 throw new \Exception("El QR está fuera de los límites del área segura. Por favor, ajusta la posición.");
             }
             
-            // Insertar imagen QR en el PDF
+            // Insertar imagen QR en la página especificada
             // TCPDF Image() método: Image($file, $x, $y, $w = 0, $h = 0, ...)
             // TCPDF usa coordenadas desde la esquina superior izquierda (top-left origin)
             // El frontend también envía Y desde arriba, así que usamos directamente
@@ -227,15 +245,18 @@ class PdfProcessorService
                 $finalHeight
             );
             
+            // Verificar que el número de páginas se mantenga igual
             $pageCountAfterImage = $pdf->getNumPages();
-            if ($pageCountAfterImage > 1) {
-                Log::error('ERROR CRÍTICO: Se crearon páginas adicionales después de Image()', [
-                    'page_count' => $pageCountAfterImage,
+            if ($pageCountAfterImage !== $pageCount) {
+                Log::error('ERROR CRÍTICO: El número de páginas cambió después de Image()', [
+                    'expected' => $pageCount,
+                    'actual' => $pageCountAfterImage,
                     'qr_position' => ['x' => $x, 'y' => $pdfY, 'width' => $width, 'height' => $height],
-                    'page_dimensions' => ['width' => $pageWidth, 'height' => $pageHeight]
+                    'page_dimensions' => ['width' => $pageWidth, 'height' => $pageHeight],
+                    'page_number' => $pageNumber
                 ]);
-                // Eliminar páginas adicionales si las hay
-                while ($pdf->getNumPages() > 1) {
+                // Intentar corregir eliminando páginas extra
+                while ($pdf->getNumPages() > $pageCount) {
                     $pdf->deletePage($pdf->getNumPages());
                 }
             }

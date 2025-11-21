@@ -71,7 +71,8 @@ foreach ($deletedDocuments as $document) {
             
             if ($document->final_path) {
                 try {
-                    $finalPath = str_replace('final/', '', $document->final_path);
+                    // IMPORTANTE: final_path ya NO incluye el prefijo "final/"
+                    $finalPath = $document->final_path;
                     if (Storage::disk('final')->exists($finalPath)) {
                         Storage::disk('final')->delete($finalPath);
                     }

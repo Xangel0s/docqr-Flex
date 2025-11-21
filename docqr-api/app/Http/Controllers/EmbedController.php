@@ -98,7 +98,8 @@ class EmbedController extends Controller
                 $pdfPathToUse = $qrFile->file_path;
                 $pdfDiskToUse = 'local';
             } elseif ($qrFile->final_path) {
-                $pdfPathToUse = str_replace('final/', '', $qrFile->final_path);
+                // IMPORTANTE: final_path ya NO incluye el prefijo "final/"
+                $pdfPathToUse = $qrFile->final_path;
                 $pdfDiskToUse = 'final';
             } else {
                 Log::error('El documento no tiene file_path ni final_path:', ['qr_id' => $qrFile->qr_id]);
@@ -138,8 +139,12 @@ class EmbedController extends Controller
             // Obtener título del documento para metadatos del PDF
             $documentTitle = $qrFile->original_filename ?: $qrFile->folder_name;
             
+            // Obtener número de página (por defecto 1)
+            $pageNumber = (int) $request->input('page_number', 1);
+            
             // Pasar qr_id para nueva estructura optimizada de carpetas
             // Pasar título y nombre de carpeta para metadatos del PDF
+            // Pasar número de página para soporte de múltiples páginas
             $finalPath = $this->pdfProcessor->embedQr(
                 $validationPath,
                 $qrFile->qr_path,
@@ -147,7 +152,8 @@ class EmbedController extends Controller
                 $pdfDiskToUse,
                 $qrFile->qr_id, // Pasar qr_id para nueva estructura
                 $documentTitle,  // Título del documento para metadatos
-                $qrFile->folder_name // Nombre de carpeta como fallback
+                $qrFile->folder_name, // Nombre de carpeta como fallback
+                $pageNumber // Número de página donde se colocará el QR
             );
 
             // Actualizar registro PRIMERO (antes de eliminar archivos)
@@ -350,7 +356,8 @@ class EmbedController extends Controller
             
             // Nombre del archivo: solo el nombre original (sin prefijos)
             $finalFileName = $qrFile->original_filename;
-            $finalPath = "final/{$finalFolder}/{$finalFileName}";
+            // IMPORTANTE: No incluir "final/" porque Storage::disk('final') ya apunta a storage/app/final/
+            $finalPath = "{$finalFolder}/{$finalFileName}";
 
             // El frontend ya procesa el PDF con pdf-lib y envía solo la primera página con el QR embebido
             // Por lo tanto, podemos usar el PDF directamente sin reprocesarlo
@@ -392,29 +399,54 @@ class EmbedController extends Controller
 
             // Guardar el PDF procesado por el frontend directamente
             // El frontend ya garantiza que tiene solo 1 página con el QR embebido
-            Storage::disk('final')->put($finalPath, $pdfContent);
+            Log::info('Guardando PDF en disco final:', [
+                'qr_id' => $qrId,
+                'final_path' => $finalPath,
+                'pdf_size' => strlen($pdfContent),
+                'disk' => 'final'
+            ]);
+            
+            $saved = Storage::disk('final')->put($finalPath, $pdfContent);
+            
+            if (!$saved) {
+                Log::error('No se pudo guardar el PDF en el disco:', [
+                    'qr_id' => $qrId,
+                    'final_path' => $finalPath
+                ]);
+                throw new \Exception('No se pudo guardar el PDF en el servidor');
+            }
+            
+            // Verificar que el archivo se guardó correctamente
+            $savedPath = Storage::disk('final')->path($finalPath);
+            if (!file_exists($savedPath)) {
+                Log::error('El archivo guardado no existe:', [
+                    'qr_id' => $qrId,
+                    'expected_path' => $savedPath
+                ]);
+                throw new \Exception('El PDF se guardó pero no se encuentra en el servidor');
+            }
+            
+            $savedSize = filesize($savedPath);
+            Log::info('PDF guardado exitosamente:', [
+                'qr_id' => $qrId,
+                'final_path' => $finalPath,
+                'saved_path' => $savedPath,
+                'saved_size' => $savedSize,
+                'original_size' => strlen($pdfContent),
+                'match' => $savedSize === strlen($pdfContent) ? 'SÍ' : 'NO'
+            ]);
             
             // Verificación opcional: Intentar verificar con FPDI (puede fallar si tiene compresión no soportada)
             // Si falla, no es crítico porque el PDF ya viene procesado correctamente por el frontend
             try {
                 $verifyPdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-                $verifyPath = Storage::disk('final')->path($finalPath);
-                $verifyPageCount = $verifyPdf->setSourceFile($verifyPath);
+                $verifyPageCount = $verifyPdf->setSourceFile($savedPath);
                 
-                if ($verifyPageCount > 1) {
-                    Log::warning('PDF guardado tiene más de 1 página (verificación FPDI):', [
-                        'qr_id' => $qrId,
-                        'page_count' => $verifyPageCount,
-                        'final_path' => $finalPath,
-                        'note' => 'El PDF fue procesado por el frontend, puede ser un falso positivo de FPDI'
-                    ]);
-                } else {
-                    Log::info('PDF guardado correctamente (verificación FPDI):', [
-                        'qr_id' => $qrId,
-                        'page_count' => $verifyPageCount,
-                        'final_path' => $finalPath
-                    ]);
-                }
+                Log::info('PDF verificado con FPDI:', [
+                    'qr_id' => $qrId,
+                    'page_count' => $verifyPageCount,
+                    'final_path' => $finalPath
+                ]);
             } catch (\Exception $e) {
                 // No crítico: El PDF ya viene procesado por el frontend
                 // Si FPDI no puede leerlo (compresión no soportada), no importa

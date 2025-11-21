@@ -95,13 +95,13 @@
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
           class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
-          [title]="isCollapsed ? 'Embeber en PDF' : ''">
-          <span class="material-symbols-outlined text-base shrink-0">edit</span>
+          [title]="isCollapsed ? 'Insertar QR en PDF' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">qr_code_scanner</span>
           <p 
             class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
             [ngClass]="{
               'w-0 opacity-0': isCollapsed
-            }">Embeber en PDF</p>
+            }">Insertar QR en PDF</p>
         </a>
 
         <a 
@@ -109,13 +109,13 @@
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
           class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
-          [title]="isCollapsed ? 'Adjuntar a QR' : ''">
-          <span class="material-symbols-outlined text-base shrink-0">attach_file</span>
+          [title]="isCollapsed ? 'Crear QR y Adjuntar PDF' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">add_circle</span>
           <p 
             class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
             [ngClass]="{
               'w-0 opacity-0': isCollapsed
-            }">Adjuntar a QR</p>
+            }">Crear QR y Adjuntar PDF</p>
         </a>
 
         <a 

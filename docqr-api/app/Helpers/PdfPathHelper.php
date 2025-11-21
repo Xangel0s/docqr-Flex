@@ -25,17 +25,29 @@ class PdfPathHelper
     public static function getPdfPathToServe(QrFile $qrFile): ?array
     {
         if ($qrFile->final_path) {
-            $filePath = str_replace('final/', '', $qrFile->final_path);
+            // IMPORTANTE: final_path ya NO incluye el prefijo "final/"
+            // porque Storage::disk('final') ya apunta a storage/app/final/
+            $filePath = $qrFile->final_path;
             $disk = 'final';
             $fullPath = Storage::disk($disk)->path($filePath);
             
             if (file_exists($fullPath)) {
+                Log::info('PdfPathHelper: Sirviendo PDF FINAL (con QRs)', [
+                    'qr_id' => $qrFile->qr_id,
+                    'size' => filesize($fullPath)
+                ]);
+                
                 return [
                     'filePath' => $filePath,
                     'disk' => $disk,
                     'fullPath' => $fullPath,
                     'type' => 'final' // PDF con QR embebido
                 ];
+            } else {
+                Log::warning('PdfPathHelper: final_path existe en BD pero archivo no encontrado', [
+                    'qr_id' => $qrFile->qr_id,
+                    'expected_path' => $fullPath
+                ]);
             }
         }
         
@@ -45,6 +57,10 @@ class PdfPathHelper
             $fullPath = Storage::disk($disk)->path($filePath);
             
             if (file_exists($fullPath)) {
+                Log::info('PdfPathHelper: Sirviendo PDF ORIGINAL', [
+                    'qr_id' => $qrFile->qr_id
+                ]);
+                
                 return [
                     'filePath' => $filePath,
                     'disk' => $disk,
@@ -58,6 +74,12 @@ class PdfPathHelper
                 }
             }
         }
+        
+        Log::error('PdfPathHelper: No se encontró PDF para servir', [
+            'qr_id' => $qrFile->qr_id,
+            'final_path' => $qrFile->final_path,
+            'file_path' => $qrFile->file_path
+        ]);
         
         return null;
     }

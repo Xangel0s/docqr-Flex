@@ -394,7 +394,8 @@ class DocumentController extends Controller
                 }
                 
                 if ($document->final_path) {
-                    $finalPath = str_replace('final/', '', $document->final_path);
+                    // IMPORTANTE: final_path ya NO incluye el prefijo "final/"
+                    $finalPath = $document->final_path;
                     if (Storage::disk('final')->exists($finalPath)) {
                         $filesToDelete[] = ['disk' => 'final', 'path' => $finalPath];
                         $finalDir = dirname($finalPath);

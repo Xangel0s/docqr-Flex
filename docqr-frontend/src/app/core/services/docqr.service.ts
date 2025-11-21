@@ -136,9 +136,10 @@ export class DocqrService {
   /**
    * Embebir QR en PDF con posición
    */
-  embedQr(qrId: string, position: { x: number; y: number; width: number; height: number }): Observable<EmbedResponse> {
+  embedQr(qrId: string, position: { x: number; y: number; width: number; height: number }, pageNumber: number = 1): Observable<EmbedResponse> {
     return this.http.put<EmbedResponse>(`${this.apiUrl}/embed`, {
       qr_id: qrId,
+      page_number: pageNumber,
       ...position
     });
   }

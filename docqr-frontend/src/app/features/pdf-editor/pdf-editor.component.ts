@@ -1,5 +1,6 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Title } from '@angular/platform-browser';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -25,13 +26,11 @@ if (typeof window !== 'undefined') {
 @Component({
   selector: 'app-pdf-editor',
   standalone: true,
-  imports: [CommonModule, HttpClientModule, RouterModule, HeaderComponent, SidebarComponent, CancelConfirmModalComponent],
+  imports: [CommonModule, FormsModule, HttpClientModule, RouterModule, HeaderComponent, SidebarComponent, CancelConfirmModalComponent],
   templateUrl: './pdf-editor.component.html',
   styleUrls: ['./pdf-editor.component.scss']
 })
 export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('fabricCanvas', { static: false }) fabricCanvas!: ElementRef<HTMLCanvasElement>;
-
   sidebarOpen: boolean = false;
   qrId: string = '';
   document: Document | null = null;
@@ -40,6 +39,15 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   private retryAttempts: number = 0; // Protección contra bucles infinitos
   private readonly MAX_RETRY_ATTEMPTS: number = 1; // Solo permitir 1 reintento
   
+  // Soporte para múltiples páginas
+  totalPages: number = 1;
+  currentPage: number = 1; // Página actual que se está mostrando/editando
+  showAllPages: boolean = true; // Modo iLovePDF: mostrar todas las páginas
+  
+  // Sistema de múltiples QRs
+  qrObjects: Map<number, FabricImage[]> = new Map(); // Mapa: página -> array de QRs
+  selectedQr: { page: number; index: number } | null = null; // QR seleccionado
+  
   // Modal de confirmación de cancelación
   cancelModalOpen: boolean = false;
   
@@ -47,10 +55,33 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   pdfUrl: string = '';
   qrImageUrl: string = '';
   
-  // Fabric.js
-  private fabricCanvasInstance: Canvas | null = null;
-  private pdfObject: FabricImage | null = null; // PDF como objeto bloqueado
-  private qrObject: FabricImage | null = null;
+  // Fabric.js - Múltiples canvas (uno por página)
+  private fabricCanvases: Map<number, Canvas> = new Map(); // Mapa: página -> Canvas
+  private pdfPages: Map<number, FabricImage> = new Map(); // Mapa: página -> PDF renderizado
+  
+  // Compatibilidad con modo página única (legacy)
+  private get fabricCanvasInstance(): Canvas | null {
+    if (this.showAllPages && this.totalPages > 1) {
+      return this.fabricCanvases.get(this.currentPage) || null;
+    }
+    return this.fabricCanvases.get(1) || null;
+  }
+  
+  private get qrObject(): FabricImage | null {
+    if (this.showAllPages && this.totalPages > 1) {
+      const qrs = this.qrObjects.get(this.currentPage);
+      return qrs && qrs.length > 0 ? qrs[0] : null;
+    }
+    const qrs = this.qrObjects.get(1);
+    return qrs && qrs.length > 0 ? qrs[0] : null;
+  }
+  
+  private get pdfObject(): FabricImage | null {
+    if (this.showAllPages && this.totalPages > 1) {
+      return this.pdfPages.get(this.currentPage) || null;
+    }
+    return this.pdfPages.get(1) || null;
+  }
   
   // Bandera para prevenir correcciones múltiples simultáneas que causan movimiento
   private isCorrectingQrPosition: boolean = false;
@@ -99,19 +130,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    // Esperar a que Angular renderice los ViewChild
+    // Esperar a que Angular renderice los ViewChild antes de cargar el documento
     setTimeout(() => {
-      // Inicializar Fabric.js primero
-      this.initFabricCanvas();
-      
-      // Esperar un poco más para asegurar que el canvas esté completamente inicializado
-      setTimeout(() => {
-        // Después de inicializar el canvas, cargar el documento
-        if (this.qrId) {
-          this.loadDocument();
-        }
-      }, 200);
-    }, 200);
+      if (this.qrId) {
+        this.loadDocument();
+      }
+    }, 300);
   }
 
   ngOnDestroy(): void {
@@ -119,49 +143,62 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.renderTask) {
       this.renderTask.cancel();
     }
-    if (this.fabricCanvasInstance) {
-      this.fabricCanvasInstance.dispose();
-    }
+    // Limpiar todos los canvas
+    this.fabricCanvases.forEach(canvas => canvas.dispose());
+    this.fabricCanvases.clear();
   }
 
   /**
-   * Inicializar canvas de Fabric.js
+   * Inicializar canvas de Fabric.js (SOLO para modo página única)
+   * Usa el mismo canvas que se crea dinámicamente para la página 1
    */
-  private initFabricCanvas(): void {
-    if (!this.fabricCanvas?.nativeElement) {
-      setTimeout(() => {
-        if (this.fabricCanvas?.nativeElement) {
-          this.initFabricCanvas();
-        } else {
-          if (!environment.production) {
-            console.error('No se pudo encontrar el canvas de Fabric.js después de varios intentos');
-          }
-        }
-      }, 100);
-      return;
+  private async initFabricCanvas(retryCount: number = 0): Promise<void> {
+    // Solo inicializar si estamos en modo página única
+    if (this.showAllPages && this.totalPages > 1) {
+      if (!environment.production) {
+        console.log('⏭️ Saltando initFabricCanvas (modo múltiples páginas)');
+      }
+      return; // En modo múltiples páginas, los canvas se crean en renderSinglePage
     }
 
     if (this.fabricCanvasInstance) {
+      if (!environment.production) {
+        console.log('✅ Canvas ya inicializado, saltando initFabricCanvas');
+      }
+      return; // Ya está inicializado
+    }
+
+    const maxRetries = 10;
+    
+    if (!environment.production) {
+      console.log('🔍 Buscando elemento canvas fabric-canvas-1 en el DOM...');
+    }
+    
+    // Esperar a que el canvas esté disponible en el DOM
+    const canvasElement = await this.waitForCanvasElement('fabric-canvas-1', maxRetries, 200);
+    
+    if (!canvasElement) {
+      console.error('❌ No se pudo encontrar el canvas de Fabric.js (fabric-canvas-1) después de varios intentos');
       return;
     }
 
-    try {
-      const canvasElement = this.fabricCanvas.nativeElement;
+    if (!environment.production) {
+      console.log('✅ Elemento canvas encontrado en el DOM');
+    }
 
-      // Asegurar que el elemento canvas tenga las dimensiones correctas y esté posicionado correctamente
+    try {
+      // Asegurar que el elemento canvas tenga las dimensiones correctas
       canvasElement.width = this.STANDARD_PDF_WIDTH;
       canvasElement.height = this.STANDARD_PDF_HEIGHT;
       canvasElement.style.width = `${this.STANDARD_PDF_WIDTH}px`;
       canvasElement.style.height = `${this.STANDARD_PDF_HEIGHT}px`;
-      canvasElement.style.position = 'absolute';
-      canvasElement.style.top = '0px';
-      canvasElement.style.left = '0px';
-      canvasElement.style.zIndex = '2';
-      canvasElement.style.pointerEvents = 'auto';
-      canvasElement.style.backgroundColor = 'transparent';
+
+      if (!environment.production) {
+        console.log(`📐 Dimensiones del canvas: ${this.STANDARD_PDF_WIDTH}x${this.STANDARD_PDF_HEIGHT}`);
+      }
 
       // Crear instancia de Fabric.js con el mismo tamaño que el PDF
-      this.fabricCanvasInstance = new Canvas(canvasElement, {
+      const fabricCanvas = new Canvas(canvasElement, {
         width: this.STANDARD_PDF_WIDTH,
         height: this.STANDARD_PDF_HEIGHT,
         selection: true,
@@ -169,22 +206,61 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         backgroundColor: 'transparent'
       });
 
+      if (!environment.production) {
+        console.log('✅ Instancia de Fabric.js creada');
+      }
+
+      // Guardar en el mapa (página 1 para modo página única)
+      this.fabricCanvases.set(1, fabricCanvas);
+
+      if (!environment.production) {
+        console.log('✅ Canvas guardado en fabricCanvases.get(1)');
+        console.log('Verificando getter:', this.fabricCanvasInstance ? 'Canvas accesible' : 'Canvas NO accesible');
+      }
+
       // Configurar controles personalizados
-      this.configureFabricControls();
+      this.configureFabricControls(fabricCanvas);
 
       // Eventos de Fabric.js - Solo aplicar al QR
-      this.fabricCanvasInstance.on('object:modified', (e: any) => {
+      fabricCanvas.on('object:modified', (e: any) => {
         // Solo procesar si es el QR (verificar por tipo o referencia)
-        if (this.qrObject && (e.target === this.qrObject || e.target?.type === 'image')) {
-        this.onQrModified();
+        const qr = this.qrObject;
+        const pdfImage = this.pdfPages.get(1);
+        if (e.target && e.target !== pdfImage && (e.target === qr || e.target?.type === 'image')) {
+          this.onQrModified();
         }
       });
 
-      // Prevenir que los controles afecten el QR cuando se mueve
-      this.fabricCanvasInstance.on('object:moving', (e: any) => {
-        // Solo aplicar restricciones si es el QR
-        if (this.qrObject && (e.target === this.qrObject || e.target?.type === 'image')) {
-        this.constrainQrToCanvas(e);
+      // Prevenir que el QR se salga de los límites
+      fabricCanvas.on('object:moving', (e: any) => {
+        const qr = this.qrObject;
+        const pdfImage = this.pdfPages.get(1);
+        if (e.target && e.target !== pdfImage && (e.target === qr || e.target?.type === 'image')) {
+          this.constrainObjectToCanvas(e.target, fabricCanvas);
+        }
+      });
+
+      // Tecla Delete para eliminar QR seleccionado
+      fabricCanvas.on('selection:created', (e: any) => {
+        const obj = e.selected?.[0];
+        const pdfImage = this.pdfPages.get(1);
+        
+        if (obj && obj !== pdfImage) {
+          console.log('✅ QR seleccionado en página única');
+          
+          const deleteHandler = (evt: KeyboardEvent) => {
+            if ((evt.key === 'Delete' || evt.key === 'Backspace') && fabricCanvas.getActiveObject() === obj) {
+              console.log('🗑️ Tecla Delete/Backspace presionada');
+              this.deleteQr(obj, fabricCanvas, 1);
+              document.removeEventListener('keydown', deleteHandler);
+            }
+          };
+          
+          document.addEventListener('keydown', deleteHandler);
+          
+          fabricCanvas.once('selection:cleared', () => {
+            document.removeEventListener('keydown', deleteHandler);
+          });
         }
       });
 
@@ -207,9 +283,16 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Esperar a que el canvas de Fabric.js esté inicializado
+   * Esperar a que el canvas de Fabric.js esté inicializado (SOLO para modo página única)
+   * NOTA: Este método ya no se usa. Se mantiene por compatibilidad pero initFabricCanvas
+   * se llama directamente desde loadDocument ahora.
    */
   private async waitForFabricCanvas(): Promise<void> {
+    // Solo esperar si estamos en modo página única
+    if (this.showAllPages && this.totalPages > 1) {
+      return; // En modo múltiples páginas, no necesitamos esperar este canvas
+    }
+
     let attempts = 0;
     const maxAttempts = 50; // 5 segundos máximo (50 * 100ms)
 
@@ -226,8 +309,9 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   /**
    * Configurar controles visuales de Fabric.js (como iLovePDF)
    */
-  private configureFabricControls(): void {
-    if (!this.fabricCanvasInstance) return;
+  private configureFabricControls(canvas?: Canvas): void {
+    const targetCanvas = canvas || this.fabricCanvasInstance;
+    if (!targetCanvas) return;
 
     // Personalizar apariencia de los controles
     FabricObject.prototype.set({
@@ -274,16 +358,77 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
 
-      // Asegurar que el canvas de Fabric.js esté inicializado
-      if (!this.fabricCanvasInstance) {
-        await this.waitForFabricCanvas();
+      // Cargar PDF.js documento para obtener número de páginas
+      const loadingTask = pdfjsLib.getDocument({
+        url: this.pdfUrl,
+        verbosity: 0,
+        stopAtErrors: false,
+        isEvalSupported: false,
+        httpHeaders: { 'Accept': 'application/pdf', 'X-Requested-With': 'XMLHttpRequest' },
+        useSystemFonts: false,
+        withCredentials: false,
+      });
+      this.pdfDoc = await loadingTask.promise;
+      this.totalPages = this.pdfDoc.numPages;
+
+      if (!environment.production) {
+        console.log(`📄 Documento analizado: ${this.totalPages} página(s)`);
       }
 
-      // Renderizar PDF como imagen de fondo en el canvas de Fabric.js
-      await this.renderPdfAsBackground();
+      // DETECCIÓN AUTOMÁTICA: Si tiene 1 página, usar método antiguo. Si tiene 2+, usar método nuevo
+      if (this.totalPages === 1) {
+        // MODO PÁGINA ÚNICA: Usar método antiguo (sistema clásico que funciona perfecto)
+        if (!environment.production) {
+          console.log('✅ Usando MODO PÁGINA ÚNICA (sistema clásico)');
+        }
+        this.showAllPages = false;
+        this.currentPage = 1;
+        
+        // Inicializar el canvas de Fabric.js para modo página única
+        if (!environment.production) {
+          console.log('🎨 Inicializando canvas de Fabric.js...');
+        }
+        await this.initFabricCanvas();
+        
+        // Verificar que se inicializó correctamente
+        if (!this.fabricCanvasInstance) {
+          console.error('❌ El canvas no se inicializó correctamente');
+          throw new Error('No se pudo inicializar el canvas de Fabric.js para página única');
+        }
+        
+        if (!environment.production) {
+          console.log('✅ Canvas inicializado correctamente');
+          console.log('📄 Renderizando PDF en canvas...');
+        }
 
-      // Cargar QR como objeto interactivo
-      await this.loadQrToFabric();
+        // Renderizar PDF como imagen de fondo en el canvas de Fabric.js
+        await this.renderPdfAsBackground();
+
+        if (!environment.production) {
+          console.log('✅ PDF renderizado');
+          console.log('🎯 Cargando QR al canvas...');
+        }
+
+        // Cargar QR normalmente
+        await this.loadQrToFabric();
+        
+        if (!environment.production) {
+          console.log('✅ QR cargado - Página única lista!');
+        }
+      } else {
+        // MODO MÚLTIPLES PÁGINAS: Usar método nuevo (iLovePDF style)
+        if (!environment.production) {
+          console.log('✅ Usando MODO MÚLTIPLES PÁGINAS (sistema nuevo - iLovePDF style)');
+        }
+        this.showAllPages = true;
+        this.currentPage = 1;
+
+        // Renderizar todas las páginas (esto crea los canvas dinámicamente)
+        await this.renderAllPages();
+
+        // Cargar QRs existentes
+        await this.loadExistingQrs();
+      }
 
       this.loading = false;
       } catch (error: any) {
@@ -302,152 +447,197 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Renderizar PDF como imagen de fondo en el canvas de Fabric.js
+   * Renderizar PDF como imagen de fondo en el canvas de Fabric.js (SOLO para modo página única)
    */
   private async renderPdfAsBackground(): Promise<void> {
+    // Solo usar este método en modo página única
+    if (this.showAllPages && this.totalPages > 1) {
+      if (!environment.production) {
+        console.log('⏭️ Saltando renderPdfAsBackground (modo múltiples páginas)');
+      }
+      return; // En modo múltiples páginas, usar renderAllPages
+    }
+
+    if (!environment.production) {
+      console.log('🖼️ renderPdfAsBackground: Iniciando...');
+      console.log('Canvas instance:', this.fabricCanvasInstance ? 'Existe' : 'NO existe');
+    }
+
     if (!this.fabricCanvasInstance) {
-      console.error('Canvas de Fabric.js no inicializado');
+      console.error('❌ Canvas de Fabric.js no inicializado en renderPdfAsBackground');
       return;
     }
 
+    // El PDF ya debe estar cargado desde loadDocument()
+    if (!this.pdfDoc) {
+      console.error('❌ PDF no está cargado. Esto no debería suceder.');
+      throw new Error('PDF no cargado');
+    }
+
     try {
-      // Crear un canvas temporal para renderizar el PDF
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = this.STANDARD_PDF_WIDTH;
-      tempCanvas.height = this.STANDARD_PDF_HEIGHT;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (!tempCtx) {
-        throw new Error('No se pudo obtener el contexto 2D del canvas temporal');
-      }
-
-      // Cancelar renderizado anterior si existe
-      if (this.renderTask) {
-        this.renderTask.cancel();
-        this.renderTask = null;
-      }
-
-      tempCtx.fillStyle = 'white';
-      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      // La validación previa puede ser demasiado estricta y bloquear PDFs válidos
-      // PDF.js tiene su propia validación y manejo de errores
-
-      // Cargar PDF solo si no está cargado o cambió la URL
-      if (!this.pdfDoc || this.pdfDoc._transport?.url !== this.pdfUrl) {
-        // Verificar primero qué está devolviendo el servidor (diagnóstico)
-        try {
-          const testResponse = await fetch(this.pdfUrl, {
-            method: 'HEAD',
-            headers: {
-              'Accept': 'application/pdf',
-              'X-Requested-With': 'XMLHttpRequest', // Evitar página de bienvenida de ngrok
-            }
-          });
-          
-          const contentType = testResponse.headers.get('content-type');
-          if (contentType && !contentType.includes('application/pdf') && !contentType.includes('application/octet-stream')) {
-            if (!environment.production) {
-              console.error('El servidor no está devolviendo un PDF:', contentType);
-            }
-            throw new Error(`El servidor está devolviendo ${contentType} en lugar de application/pdf.`);
-          }
-        } catch (testError: any) {
-          // Continuar de todas formas, PDF.js intentará cargar
-        }
-        
-        const loadingTask = pdfjsLib.getDocument({
-          url: this.pdfUrl,
-          verbosity: 0, // Reducir warnings en consola
-          stopAtErrors: false, // Continuar aunque haya errores menores
-          isEvalSupported: false, // Deshabilitar eval para seguridad
-          httpHeaders: {
-            'Accept': 'application/pdf',
-            'X-Requested-With': 'XMLHttpRequest', // Evitar página de bienvenida de ngrok
-          },
-          // Usar fetch en lugar de XMLHttpRequest para mejor compatibilidad con CORS
-          useSystemFonts: false,
-          // Configurar conCredentials para CORS
-          withCredentials: false,
-        });
-        
-        this.pdfDoc = await loadingTask.promise;
+      if (!environment.production) {
+        console.log('📖 Obteniendo página 1 del PDF...');
       }
 
       // Obtener primera página
       this.pdfPage = await this.pdfDoc.getPage(1);
+
+      if (!environment.production) {
+        console.log('✅ Página obtenida');
+      }
 
       // Obtener viewport original
       const originalViewport = this.pdfPage.getViewport({ scale: 1.0 });
       this.pdfDimensions.originalWidth = originalViewport.width;
       this.pdfDimensions.originalHeight = originalViewport.height;
 
+      if (!environment.production) {
+        console.log(`📐 Dimensiones originales del PDF: ${originalViewport.width}x${originalViewport.height}`);
+      }
+
       // Calcular escala para ajustar a tamaño estándar (595x842)
       const scaleX = this.STANDARD_PDF_WIDTH / originalViewport.width;
       const scaleY = this.STANDARD_PDF_HEIGHT / originalViewport.height;
       const scale = Math.min(scaleX, scaleY);
       this.pdfDimensions.scale = scale;
+      this.pdfDimensions.offsetX = (this.STANDARD_PDF_WIDTH - (originalViewport.width * scale)) / 2;
+      this.pdfDimensions.offsetY = (this.STANDARD_PDF_HEIGHT - (originalViewport.height * scale)) / 2;
+
+      if (!environment.production) {
+        console.log(`📏 Escala calculada: ${scale}, Offset: (${this.pdfDimensions.offsetX}, ${this.pdfDimensions.offsetY})`);
+      }
 
       // Obtener viewport escalado
       const scaledViewport = this.pdfPage.getViewport({ scale });
 
+      // Crear canvas temporal para renderizar el PDF
+      if (!environment.production) {
+        console.log('🎨 Creando canvas temporal...');
+      }
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = this.STANDARD_PDF_WIDTH;
+      tempCanvas.height = this.STANDARD_PDF_HEIGHT;
+      const tempCtx = tempCanvas.getContext('2d', { 
+        alpha: false, // Fondo opaco para mejor rendimiento
+        willReadFrequently: true 
+      });
+      
+      if (!tempCtx) {
+        throw new Error('No se pudo obtener el contexto 2D del canvas temporal');
+      }
+
+      // Fondo blanco
+      tempCtx.fillStyle = 'white';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      if (!environment.production) {
+        console.log('🖌️ Renderizando PDF en canvas temporal...');
+      }
+
       // Calcular offset de centrado
       const offsetX = (this.STANDARD_PDF_WIDTH - scaledViewport.width) / 2;
       const offsetY = (this.STANDARD_PDF_HEIGHT - scaledViewport.height) / 2;
-      this.pdfDimensions.offsetX = offsetX;
-      this.pdfDimensions.offsetY = offsetY;
 
       // Renderizar PDF centrado en canvas temporal
       const renderContext = {
         canvasContext: tempCtx,
         viewport: scaledViewport,
-        transform: [1, 0, 0, 1, offsetX, offsetY]
+        transform: [1, 0, 0, 1, offsetX, offsetY],
+        background: 'white'
       };
+
+      // Cancelar renderizado anterior si existe
+      if (this.renderTask) {
+        this.renderTask.cancel();
+      }
 
       this.renderTask = this.pdfPage.render(renderContext);
       await this.renderTask.promise;
       this.renderTask = null;
 
-      const pdfImageUrl = tempCanvas.toDataURL('image/png');
-
-      if (this.pdfObject) {
-        this.fabricCanvasInstance.remove(this.pdfObject);
-        this.pdfObject = null;
+      if (!environment.production) {
+        console.log('✅ PDF renderizado en canvas temporal');
+        console.log('🔄 Convirtiendo canvas a imagen...');
       }
 
+      // SOLUCIÓN DEFINITIVA: Usar setBackgroundImage de Fabric.js
+      const fabricCanvas = this.fabricCanvasInstance;
+      if (!fabricCanvas) {
+        console.error('❌ Canvas de Fabric.js no disponible');
+        throw new Error('Canvas no disponible');
+      }
+
+      // Convertir canvas temporal a data URL
+      const pdfImageUrl = tempCanvas.toDataURL('image/png', 1.0);
+      
+      if (!environment.production) {
+        const sizeKB = Math.round(pdfImageUrl.length / 1024);
+        console.log(`📊 Imagen PDF: ${sizeKB}KB`);
+      }
+
+      // Remover PDF anterior si existe
+      const pdfObj = this.pdfObject;
+      if (pdfObj) {
+        if (!environment.production) {
+          console.log('🗑️ Removiendo PDF anterior');
+        }
+        fabricCanvas.remove(pdfObj);
+        this.pdfPages.delete(this.showAllPages && this.totalPages > 1 ? this.currentPage : 1);
+      }
+
+      if (!environment.production) {
+        console.log('🎨 Estableciendo PDF como BACKGROUND IMAGE de Fabric.js...');
+      }
+
+      // Crear imagen de Fabric.js desde el data URL
       const pdfImage = await FabricImage.fromURL(pdfImageUrl, {
         crossOrigin: 'anonymous'
       });
 
+      if (!environment.production) {
+        console.log(`✅ Imagen creada: ${pdfImage.width}x${pdfImage.height}`);
+      }
+
+      // Configurar la imagen para que actúe como fondo
       pdfImage.set({
         left: 0,
         top: 0,
-        width: this.STANDARD_PDF_WIDTH,
-        height: this.STANDARD_PDF_HEIGHT,
-        scaleX: 1,
-        scaleY: 1,
-        selectable: false,
-        evented: false,
-        hasControls: false,
-        hasBorders: false,
+        scaleX: this.STANDARD_PDF_WIDTH / pdfImage.width!,
+        scaleY: this.STANDARD_PDF_HEIGHT / pdfImage.height!,
+        originX: 'left',
+        originY: 'top',
+        selectable: false,  // No se puede seleccionar
+        evented: false,     // No responde a eventos
+        hasControls: false, // No tiene controles
+        hasBorders: false,  // No tiene bordes
         lockMovementX: true,
         lockMovementY: true,
         lockRotation: true,
         lockScalingX: true,
-        lockScalingY: true,
-        excludeFromExport: false
+        lockScalingY: true
       });
 
-      // Agregar PDF al canvas (se agregará primero, quedando en el fondo)
-      this.fabricCanvasInstance.add(pdfImage);
-      this.pdfObject = pdfImage;
+      // Agregar como primer objeto (fondo) del canvas
+      // Al agregarlo primero, estará en el z-index más bajo
+      fabricCanvas.add(pdfImage);
+      
+      // Guardar referencia en el mapa
+      this.pdfPages.set(this.showAllPages && this.totalPages > 1 ? this.currentPage : 1, pdfImage);
+      
+      // Renderizar
+      fabricCanvas.renderAll();
 
-      // Asegurar que el objeto esté en la parte inferior (fondo)
-      // En Fabric.js, el orden de adición determina el z-index (primero = fondo)
-      // Si hay otros objetos, enviar el PDF al fondo
-      if (this.fabricCanvasInstance.getObjects().length > 1) {
-        this.fabricCanvasInstance.sendObjectToBack(pdfImage);
+      if (!environment.production) {
+        console.log('✅ PDF agregado como objeto de fondo (bloqueado)');
+        console.log(`Escala aplicada: ${pdfImage.scaleX}x${pdfImage.scaleY}`);
+        console.log(`Objetos totales en canvas: ${fabricCanvas.getObjects().length}`);
       }
 
-      this.fabricCanvasInstance.renderAll();
+      if (!environment.production) {
+        console.log('✅ PDF renderizado como fondo - VISIBLE!');
+        console.log(`📊 Objetos en canvas: ${fabricCanvas.getObjects().length}`);
+      }
 
     } catch (error: any) {
       if (!environment.production) {
@@ -563,33 +753,59 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Cargar QR como objeto interactivo en Fabric.js
    */
   private async loadQrToFabric(): Promise<void> {
+    if (!environment.production) {
+      console.log('🎯 loadQrToFabric: Iniciando...');
+      console.log('Canvas instance:', this.fabricCanvasInstance ? 'Existe' : 'NO existe');
+      console.log('QR URL:', this.qrImageUrl ? 'Disponible' : 'NO disponible');
+    }
+
     if (!this.fabricCanvasInstance) {
-      console.error('Canvas de Fabric.js no inicializado');
+      console.error('❌ Canvas de Fabric.js no inicializado en loadQrToFabric');
       return;
     }
 
     if (!this.qrImageUrl) {
-      if (!environment.production) {
-        console.error('URL de imagen QR no disponible');
-      }
+      console.error('❌ URL de imagen QR no disponible');
       return;
     }
 
     try {
+      if (!environment.production) {
+        console.log('📥 Cargando imagen QR desde:', this.qrImageUrl);
+      }
+      
       const img = await FabricImage.fromURL(this.qrImageUrl, {
         crossOrigin: 'anonymous'
       });
 
+      if (!environment.production) {
+        console.log('✅ Imagen QR cargada correctamente');
+      }
+
       if (!this.fabricCanvasInstance) {
-        if (!environment.production) {
-          console.error('Canvas de Fabric.js se perdió durante la carga');
-        }
+        console.error('❌ Canvas de Fabric.js se perdió durante la carga');
         return;
       }
 
       // Si ya existe un QR, eliminarlo
-      if (this.qrObject) {
-        this.fabricCanvasInstance.remove(this.qrObject);
+      const qr = this.qrObject;
+      const canvasForQrRemove = this.fabricCanvasInstance;
+      if (qr && canvasForQrRemove) {
+        canvasForQrRemove.remove(qr);
+        // Limpiar del mapa
+        if (this.showAllPages && this.totalPages > 1) {
+          const qrs = this.qrObjects.get(this.currentPage);
+          if (qrs) {
+            const index = qrs.indexOf(qr);
+            if (index > -1) qrs.splice(index, 1);
+          }
+        } else {
+          const qrs = this.qrObjects.get(1);
+          if (qrs) {
+            const index = qrs.indexOf(qr);
+            if (index > -1) qrs.splice(index, 1);
+          }
+        }
       }
 
       // Configurar posición inicial o restaurar posición guardada
@@ -748,7 +964,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
               obj.setCoords();
               
               // Forzar renderizado
-              this.fabricCanvasInstance.renderAll();
+                const canvas = this.fabricCanvasInstance;
+                if (canvas) {
+                  canvas.renderAll();
+                }
               
               // Desactivar bandera después de aplicar cambios
               this.isCorrectingQrPosition = false;
@@ -816,7 +1035,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
             
             // CRÍTICO: Usar requestAnimationFrame para aplicar en el siguiente frame
             requestAnimationFrame(() => {
-              if (obj && this.fabricCanvasInstance) {
+              const canvas = this.fabricCanvasInstance;
+              if (obj && canvas) {
                 obj.set({
                   scaleX: clampedScale,
                   scaleY: clampedScale,
@@ -827,7 +1047,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
                 // Actualizar coordenadas después de aplicar cambios
                 obj.setCoords();
                 
-                this.fabricCanvasInstance.renderAll();
+                canvas.renderAll();
                 
                 // Desactivar bandera después de aplicar cambios
                 this.isCorrectingQrPosition = false;
@@ -843,16 +1063,32 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Agregar QR al canvas (se agregará encima del PDF porque se agrega después)
       // En Fabric.js, los objetos se renderizan en el orden de inserción (último = arriba)
-      this.fabricCanvasInstance.add(img);
-      this.fabricCanvasInstance.setActiveObject(img);
-      this.qrObject = img;
-
-      this.fabricCanvasInstance.renderAll();
+      const canvasForQrAdd = this.fabricCanvasInstance;
+      if (canvasForQrAdd) {
+        canvasForQrAdd.add(img);
+        canvasForQrAdd.setActiveObject(img);
+        // Guardar en el mapa
+        if (this.showAllPages && this.totalPages > 1) {
+          if (!this.qrObjects.has(this.currentPage)) {
+            this.qrObjects.set(this.currentPage, []);
+          }
+          this.qrObjects.get(this.currentPage)!.push(img);
+        } else {
+          if (!this.qrObjects.has(1)) {
+            this.qrObjects.set(1, []);
+          }
+          this.qrObjects.get(1)!.push(img);
+        }
+        canvasForQrAdd.renderAll();
+        
+        if (!environment.production) {
+          console.log('✅ QR agregado al canvas y renderizado');
+          console.log('Total de objetos en canvas:', canvasForQrAdd.getObjects().length);
+        }
+      }
 
       } catch (error: any) {
-        if (!environment.production) {
-          console.error('Error al cargar QR en Fabric.js:', error);
-        }
+        console.error('❌ Error al cargar QR en Fabric.js:', error);
       throw error;
     }
   }
@@ -861,11 +1097,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Restringir QR dentro de los límites del canvas
    * IMPORTANTE: Solo restringe si el usuario está moviendo el QR intencionalmente
    */
-  private constrainQrToCanvas(e: any): void {
-    if (!this.qrObject || !this.fabricCanvasInstance) return;
+  private constrainQrToCanvas(e: any, canvas?: Canvas): void {
+    const targetCanvas = canvas || this.fabricCanvasInstance;
+    const qr = this.qrObject;
+    if (!qr || !targetCanvas) return;
 
     const obj = e.target as FabricImage;
-    if (!obj || obj !== this.qrObject) return; // Solo procesar si es el QR
+    if (!obj || obj !== qr) return; // Solo procesar si es el QR
 
     // Calcular dimensiones reales del QR usando getBoundingRect()
     // Esto es más preciso que multiplicar width * scaleX manualmente
@@ -926,7 +1164,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         top: newTop
       });
       obj.setCoords(); // Actualizar coordenadas de controles
-      this.fabricCanvasInstance.renderAll();
+      targetCanvas.renderAll();
     }
   }
 
@@ -1038,7 +1276,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           // Actualizar coordenadas después de aplicar cambios
           obj.setCoords();
           
-          this.fabricCanvasInstance.renderAll();
+                const canvas = this.fabricCanvasInstance;
+                if (canvas) {
+                  canvas.renderAll();
+                }
           
           // Desactivar bandera después de aplicar cambios
           this.isCorrectingQrPosition = false;
@@ -1050,18 +1291,20 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  /**
-   * Callback cuando el QR es modificado
-   */
-  private onQrModified(): void {
-    // Actualizar información en tiempo real si es necesario
-    this.fabricCanvasInstance?.renderAll();
-  }
+  // El método onQrModified con parámetros está más abajo
 
   /**
    * Guardar posición del QR usando coordenadas exactas de Fabric.js
+   * Soporta modo de página única y modo múltiples páginas
    */
   async savePosition(): Promise<void> {
+    // Si estamos en modo múltiples páginas, guardar todos los QRs
+    if (this.showAllPages && this.totalPages > 1) {
+      await this.saveAllQrsPositions();
+      return;
+    }
+
+    // Modo página única (comportamiento original)
     if (!this.document || !this.qrObject || !this.fabricCanvasInstance) {
       this.notificationService.showError('Documento o QR no cargado');
       return;
@@ -1135,8 +1378,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const boundingRect = obj.getBoundingRect();
 
       // Validar que el QR esté completamente dentro del canvas antes de guardar
-      const canvasWidth = this.fabricCanvasInstance.width!;
-      const canvasHeight = this.fabricCanvasInstance.height!;
+      const canvas = this.fabricCanvasInstance;
+      if (!canvas) {
+        this.saving = false;
+        return;
+      }
+      const canvasWidth = canvas.width!;
+      const canvasHeight = canvas.height!;
 
       // 4. Convertir dimensiones del canvas al espacio real del PDF
       let qrWidthInRealPdf = finalWidth / pdfScale;
@@ -1230,13 +1478,259 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Usar el backend directamente (FPDI/TCPDF) - MÁS CONFIABLE
       // El backend garantiza que solo se procese la primera página y no cree páginas adicionales
-      this.savePositionBackend(position);
+      this.savePositionBackend(position, this.currentPage);
 
     } catch (error: any) {
       if (!environment.production) {
         console.error('Error al guardar posición:', error);
       }
       this.notificationService.showError('Error al guardar la posición');
+      this.saving = false;
+    }
+  }
+
+  /**
+   * Guardar todas las posiciones de QRs de todas las páginas
+   */
+  async saveAllQrsPositions(): Promise<void> {
+    console.log('💾 saveAllQrsPositions iniciado');
+    
+    if (!this.document || !this.qrId) {
+      console.error('❌ Documento o qrId no disponible');
+      this.notificationService.showError('Documento no cargado');
+      return;
+    }
+
+    this.saving = true;
+    console.log('🔄 Estado saving activado');
+
+    try {
+      // Recopilar todos los QRs de todas las páginas
+      const qrsToSave: Array<{ page: number; position: { x: number; y: number; width: number; height: number } }> = [];
+
+      console.log(`🔍 Buscando QRs en ${this.totalPages} páginas...`);
+
+      for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
+        const canvas = this.fabricCanvases.get(pageNum);
+        const qrs = this.qrObjects.get(pageNum) || [];
+
+        console.log(`Página ${pageNum}: Canvas=${canvas ? 'SÍ' : 'NO'}, QRs=${qrs.length}`);
+
+        if (!canvas || qrs.length === 0) {
+          continue;
+        }
+
+        // Para cada QR en esta página, calcular su posición
+        for (const qrImage of qrs) {
+          const obj = qrImage;
+          const qrLeft = obj.left || 0;
+          const qrTop = obj.top || 0;
+          
+          // Calcular dimensiones
+          const originalQrWidth = obj.width || 300;
+          const originalQrHeight = obj.height || 300;
+          const scaleX = obj.scaleX || 1;
+          const scaleY = obj.scaleY || 1;
+          const uniformScale = (scaleX + scaleY) / 2;
+          
+          const finalWidth = originalQrWidth * uniformScale;
+          const finalHeight = originalQrHeight * uniformScale;
+
+          // Convertir al espacio estándar (595x842)
+          const position = {
+            x: Math.round(qrLeft * 100) / 100,
+            y: Math.round(qrTop * 100) / 100,
+            width: Math.round(finalWidth * 100) / 100,
+            height: Math.round(finalHeight * 100) / 100
+          };
+
+          console.log(`✅ QR encontrado en página ${pageNum}:`, position);
+          qrsToSave.push({ page: pageNum, position });
+        }
+      }
+
+      console.log(`📊 Total QRs para guardar: ${qrsToSave.length}`);
+
+      if (qrsToSave.length === 0) {
+        console.warn('⚠️ No hay QRs para guardar');
+        this.notificationService.showError('No hay QRs para guardar');
+        this.saving = false;
+        return;
+      }
+
+      // SIEMPRE usar método pdf-lib (funciona con PDFs comprimidos)
+      // El método del backend (FPDI) falla con muchos PDFs comprimidos
+      console.log(`📚 ${qrsToSave.length} QR(s) detectado(s), usando método pdf-lib (universal)`);
+      await this.saveMultipleQrsPositions(qrsToSave);
+
+    } catch (error: any) {
+      console.error('❌❌❌ Error al guardar posiciones:', error);
+      this.notificationService.showError('Error al guardar las posiciones');
+      this.saving = false;
+    }
+  }
+
+  /**
+   * Guardar múltiples QRs en el PDF
+   */
+  private async saveMultipleQrsPositions(qrs: Array<{ page: number; position: { x: number; y: number; width: number; height: number } }>): Promise<void> {
+    console.log('📦 saveMultipleQrsPositions iniciado', qrs);
+    
+    try {
+      console.log('📚 Importando pdf-lib...');
+      const { PDFDocument } = await import('pdf-lib');
+
+      // Cargar PDF original
+      console.log('📄 Cargando PDF original desde:', this.pdfUrl);
+      const pdfResponse = await fetch(this.pdfUrl!);
+      const pdfBytes = await pdfResponse.arrayBuffer();
+      console.log(`✅ PDF cargado: ${pdfBytes.byteLength} bytes`);
+      
+      const sourcePdfDoc = await PDFDocument.load(pdfBytes);
+      console.log('✅ PDF parseado correctamente');
+
+      // Crear nuevo PDF con todas las páginas
+      console.log('🆕 Creando nuevo documento PDF...');
+      const newPdfDoc = await PDFDocument.create();
+      const sourcePages = sourcePdfDoc.getPages();
+      console.log(`📄 Copiando ${sourcePages.length} páginas...`);
+      
+      const pageIndices = Array.from({ length: sourcePages.length }, (_, i) => i);
+      const copiedPages = await newPdfDoc.copyPages(sourcePdfDoc, pageIndices);
+      copiedPages.forEach(page => newPdfDoc.addPage(page));
+      console.log('✅ Páginas copiadas');
+
+      const pages = newPdfDoc.getPages();
+      console.log(`📄 Total páginas en nuevo PDF: ${pages.length}`);
+
+      // Cargar imagen QR una vez
+      console.log('🖼️ Cargando imagen QR desde:', this.qrImageUrl);
+      const qrResponse = await fetch(this.qrImageUrl!);
+      const qrBytes = await qrResponse.arrayBuffer();
+      const qrBytesArray = new Uint8Array(qrBytes);
+      console.log(`✅ Imagen QR cargada: ${qrBytes.byteLength} bytes`);
+      
+      let qrImage;
+      if (this.qrImageUrl!.toLowerCase().includes('.png') || 
+          (qrBytesArray.length > 0 && qrBytesArray[0] === 0x89 && qrBytesArray[1] === 0x50)) {
+        console.log('📌 Embebiendo como PNG...');
+        qrImage = await newPdfDoc.embedPng(qrBytes);
+      } else {
+        console.log('📌 Embebiendo como JPG...');
+        qrImage = await newPdfDoc.embedJpg(qrBytes);
+      }
+      console.log('✅ Imagen QR embebida en el documento');
+
+      // Embebir cada QR en su página correspondiente
+      console.log(`🎯 Embebiendo ${qrs.length} QRs en sus páginas...`);
+      for (const { page, position } of qrs) {
+        const targetPageIndex = page - 1;
+        if (targetPageIndex < 0 || targetPageIndex >= pages.length) {
+          console.warn(`⚠️ Página ${page} fuera de rango, saltando`);
+          continue;
+        }
+
+        const targetPage = pages[targetPageIndex];
+        const { width: pageWidth, height: pageHeight } = targetPage.getSize();
+
+        // Convertir coordenadas del canvas estándar (595x842) al PDF real
+        const scaleX = pageWidth / this.STANDARD_PDF_WIDTH;
+        const scaleY = pageHeight / this.STANDARD_PDF_HEIGHT;
+
+        // pdf-lib usa coordenadas desde la esquina inferior izquierda
+        let pdfX = position.x * scaleX;
+        let pdfY = pageHeight - (position.y * scaleY + position.height * scaleY);
+        let pdfWidth = position.width * scaleX;
+        let pdfHeight = position.height * scaleY;
+
+        console.log(`Página ${page}: Posición (${Math.floor(pdfX)}, ${Math.floor(pdfY)}), Tamaño (${Math.floor(pdfWidth)}x${Math.floor(pdfHeight)})`);
+
+        console.log(`Página ${page}: Tamaño real del PDF (${pageWidth}x${pageHeight})`);
+        
+        // Validar que esté dentro de los límites
+        const safetyMargin = 2;
+        if (pdfX >= safetyMargin && pdfY >= safetyMargin && 
+            pdfX + pdfWidth <= pageWidth - safetyMargin && 
+            pdfY + pdfHeight <= pageHeight - safetyMargin) {
+          
+          // Dibujar QR con opacidad completa y encima de todo
+          targetPage.drawImage(qrImage, {
+            x: Math.floor(pdfX),
+            y: Math.floor(pdfY),
+            width: Math.floor(pdfWidth),
+            height: Math.floor(pdfHeight),
+            opacity: 1.0  // Forzar opacidad completa
+          });
+          console.log(`✅ QR dibujado en página ${page} con opacidad 1.0`);
+        } else {
+          console.warn(`⚠️ QR fuera de límites en página ${page}, saltando`);
+          console.warn(`   pdfX=${pdfX}, pdfY=${pdfY}, pdfWidth=${pdfWidth}, pdfHeight=${pdfHeight}`);
+          console.warn(`   Límites: x[${safetyMargin}, ${pageWidth - safetyMargin}], y[${safetyMargin}, ${pageHeight - safetyMargin}]`);
+        }
+      }
+
+      console.log('💾 Guardando PDF modificado...');
+      const modifiedPdfBytes = await newPdfDoc.save();
+      console.log(`✅ PDF guardado: ${modifiedPdfBytes.byteLength} bytes`);
+      
+      const pdfBlob = new Blob([modifiedPdfBytes as any], { type: 'application/pdf' });
+      const pdfFile = new File([pdfBlob], 'modified.pdf', { type: 'application/pdf' });
+      
+      const formData = new FormData();
+      formData.append('qr_id', this.qrId);
+      formData.append('pdf', pdfFile, 'modified.pdf');
+      formData.append('x', qrs[0].position.x.toString()); // Usar primera posición como referencia
+      formData.append('y', qrs[0].position.y.toString());
+      formData.append('width', qrs[0].position.width.toString());
+      formData.append('height', qrs[0].position.height.toString());
+      formData.append('page_number', qrs[0].page.toString());
+
+      console.log('📤 Enviando PDF al backend...');
+      console.log('FormData:', {
+        qr_id: this.qrId,
+        pdf_size: pdfFile.size,
+        total_qrs: qrs.length
+      });
+
+      this.http.post(`${environment.apiUrl}/embed-pdf`, formData).subscribe({
+        next: (response: any) => {
+          console.log('✅ Respuesta del backend:', response);
+          
+          if (response.success) {
+            console.log(`🎉 ${qrs.length} QR(s) guardados exitosamente`);
+            this.notificationService.showSuccess(`✅ ${qrs.length} QR(s) embebido(s) exitosamente`);
+            if (this.document) {
+              if (response.data?.final_pdf_url) {
+                this.document.final_pdf_url = response.data.final_pdf_url;
+                console.log('📄 PDF final URL actualizada:', this.document.final_pdf_url);
+              }
+              this.document.status = 'completed';
+            }
+            this.saving = false;
+          } else {
+            console.error('❌ Backend respondió con error:', response.message);
+            this.notificationService.showError('Error al guardar las posiciones');
+            this.saving = false;
+          }
+        },
+        error: (error: any) => {
+          console.error('❌❌❌ Error en la petición HTTP:', error);
+          console.error('Detalles:', {
+            status: error?.status,
+            statusText: error?.statusText,
+            message: error?.message,
+            error: error?.error
+          });
+          this.notificationService.showError('Error al guardar las posiciones');
+          this.saving = false;
+        }
+      });
+
+    } catch (error: any) {
+      if (!environment.production) {
+        console.error('Error al procesar múltiples QRs:', error);
+      }
+      this.notificationService.showError('Error al procesar las posiciones');
       this.saving = false;
     }
   }
@@ -1267,31 +1761,30 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       const pdfBytes = await pdfResponse.arrayBuffer();
       const sourcePdfDoc = await PDFDocument.load(pdfBytes);
 
-      // Obtener primera página del PDF original
+      // Obtener todas las páginas del PDF original
       const sourcePages = sourcePdfDoc.getPages();
       if (sourcePages.length === 0) {
         throw new Error('El PDF no tiene páginas');
       }
 
-      const sourceFirstPage = sourcePages[0];
-      const { width: pageWidth, height: pageHeight } = sourceFirstPage.getSize();
-
-      // CREAR UN NUEVO PDF SOLO CON LA PRIMERA PÁGINA
-      // Esto garantiza que nunca se crearán páginas adicionales
+      // CREAR UN NUEVO PDF CON TODAS LAS PÁGINAS
       const newPdfDoc = await PDFDocument.create();
       
-      // IMPORTANTE: copyPages() copia TODO el contenido de la página original:
-      // - Todo el texto
-      // - Todas las imágenes
-      // - Todos los gráficos y elementos visuales
-      // - El formato completo
-      // - Las dimensiones exactas de la página
-      // Es una copia exacta e idéntica del contenido original
-      const [copiedPage] = await newPdfDoc.copyPages(sourcePdfDoc, [0]);
-      newPdfDoc.addPage(copiedPage);
+      // Copiar todas las páginas del PDF original
+      const pageIndices = Array.from({ length: sourcePages.length }, (_, i) => i);
+      const copiedPages = await newPdfDoc.copyPages(sourcePdfDoc, pageIndices);
+      copiedPages.forEach(page => newPdfDoc.addPage(page));
 
       const pages = newPdfDoc.getPages();
-      const firstPage = pages[0];
+      
+      // Obtener la página donde se colocará el QR (índice basado en 0)
+      const targetPageIndex = this.currentPage - 1;
+      if (targetPageIndex < 0 || targetPageIndex >= pages.length) {
+        throw new Error(`Página ${this.currentPage} no existe. El PDF tiene ${pages.length} página(s).`);
+      }
+      
+      const targetPage = pages[targetPageIndex];
+      const { width: pageWidth, height: pageHeight } = targetPage.getSize();
 
       // Convertir coordenadas del canvas estándar (595x842) al PDF real
       const scaleX = pageWidth / this.STANDARD_PDF_WIDTH;
@@ -1374,68 +1867,30 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         qrImage = await newPdfDoc.embedJpg(qrBytes);
       }
 
-      // Embebir QR en el PDF (usando el nuevo documento con solo 1 página)
-      // IMPORTANTE: drawImage() solo dibuja una superposición, NO debería crear páginas adicionales
+      // Embebir QR en la página seleccionada del PDF
       // Las coordenadas ya están validadas para estar dentro de los límites
-      firstPage.drawImage(qrImage, {
+      targetPage.drawImage(qrImage, {
         x: pdfX,
         y: pdfY,
         width: pdfWidth,
         height: pdfHeight,
       });
 
+      // Verificar que el número de páginas se mantenga igual
       const pageCountAfterDraw = newPdfDoc.getPageCount();
+      const expectedPageCount = sourcePages.length;
       
-      if (pageCountAfterDraw > 1) {
-        // Solo loggear si no se ha loggeado recientemente (evitar spam)
+      if (pageCountAfterDraw !== expectedPageCount) {
         const now = Date.now();
         if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
           this.lastSizeWarningTime = now;
-        }
-        
-        while (newPdfDoc.getPageCount() > 1) {
-          newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
-        }
-        
-        if (newPdfDoc.getPageCount() > 1) {
-          // Solo mostrar error si no se ha mostrado recientemente
-          const now2 = Date.now();
-          if (now2 - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
-            this.lastSizeWarningTime = now2;
-          this.notificationService.showError('Error al procesar el PDF. Por favor, intenta ajustar la posición del QR.');
-          }
-          this.saving = false;
-          return;
-        }
-      }
-
-      const pageCountBeforeSave = newPdfDoc.getPageCount();
-      if (pageCountBeforeSave !== 1) {
-        // Solo loggear si no se ha loggeado recientemente (evitar spam)
-        const now = Date.now();
-        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
-          this.lastSizeWarningTime = now;
-        }
-        while (newPdfDoc.getPageCount() > 1) {
-          newPdfDoc.removePage(newPdfDoc.getPageCount() - 1);
-        }
-      }
-
-      const modifiedPdfBytes = await newPdfDoc.save();
-      
-      const verifyPdfDoc = await PDFDocument.load(modifiedPdfBytes);
-      const finalPageCount = verifyPdfDoc.getPageCount();
-      
-      if (finalPageCount > 1) {
-        // Solo mostrar error si no se ha mostrado recientemente
-        const now = Date.now();
-        if (now - this.lastSizeWarningTime > this.SIZE_WARNING_COOLDOWN) {
-          this.lastSizeWarningTime = now;
-        this.notificationService.showError(`Error: El PDF generado tiene ${finalPageCount} páginas. Por favor, ajusta la posición del QR más arriba.`);
+          this.notificationService.showError(`Error: El PDF generado tiene ${pageCountAfterDraw} página(s) en lugar de ${expectedPageCount}. Por favor, intenta de nuevo.`);
         }
         this.saving = false;
         return;
       }
+
+      const modifiedPdfBytes = await newPdfDoc.save();
 
       // Enviar al backend
       // Crear Blob directamente desde Uint8Array (TypeScript acepta esto aunque muestre warning)
@@ -1449,11 +1904,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       formData.append('y', position.y.toString());
       formData.append('width', position.width.toString());
       formData.append('height', position.height.toString());
+      formData.append('page_number', this.currentPage.toString()); // Enviar número de página
 
       // Verificar que el archivo se haya creado correctamente
       if (!pdfFile || pdfFile.size === 0) {
         this.notificationService.showError('Error: El PDF generado está vacío. Usando método alternativo...');
-        this.savePositionBackend(position);
+        this.savePositionBackend(position, this.currentPage);
         return;
       }
 
@@ -1531,7 +1987,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           
           // Intentar con método del backend (FPDI) solo si no hemos excedido los reintentos
           if (this.retryAttempts < this.MAX_RETRY_ATTEMPTS) {
-            this.savePositionBackend(position);
+            this.savePositionBackend(position, this.currentPage);
           } else {
             this.notificationService.showError('Error: No se pudo procesar el PDF. Por favor, intenta con otro archivo.');
             this.saving = false;
@@ -1545,7 +2001,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         console.error('Error al procesar PDF con pdf-lib:', error);
       }
       this.notificationService.showError('Error al procesar PDF. Usando método del backend...');
-      this.savePositionBackend(position);
+      this.savePositionBackend(position, this.currentPage);
     }
   }
 
@@ -1554,8 +2010,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Este método es más confiable porque el backend garantiza que solo se procese la primera página
    * y no cree páginas adicionales
    */
-  private savePositionBackend(position: { x: number; y: number; width: number; height: number }): void {
-    this.docqrService.embedQr(this.qrId, position).subscribe({
+  private savePositionBackend(position: { x: number; y: number; width: number; height: number }, pageNumber: number = 1): void {
+    this.docqrService.embedQr(this.qrId, position, pageNumber).subscribe({
       next: (response) => {
         if (response.success) {
           // CRÍTICO: NO actualizar la posición del QR en el canvas después de guardar
@@ -1714,6 +2170,646 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   /**
    * Obtener información del QR para el sidebar
    */
+  /**
+   * Obtener array de números de página para el selector
+   */
+  getPageNumbers(): number[] {
+    return Array.from({ length: this.totalPages }, (_, i) => i + 1);
+  }
+
+  /**
+   * Manejar cambio de página (navegación rápida)
+   */
+  async onPageChange(): Promise<void> {
+    if (!this.pdfDoc || this.currentPage < 1 || this.currentPage > this.totalPages) {
+      return;
+    }
+    
+    // Scroll a la página seleccionada
+    this.scrollToPage(this.currentPage);
+  }
+
+  /**
+   * Scroll a una página específica
+   */
+  scrollToPage(pageNumber: number): void {
+    const pageElement = document.getElementById(`pdf-page-${pageNumber}`);
+    if (pageElement) {
+      pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      this.currentPage = pageNumber;
+    }
+  }
+
+  /**
+   * Agregar un nuevo QR a la página actual
+   */
+  async addQrToPage(pageNumber: number, retryCount: number = 0): Promise<void> {
+    console.log(`🎯 addQrToPage llamado para página ${pageNumber}, intento ${retryCount + 1}`);
+    
+    if (!this.qrImageUrl) {
+      console.error('❌ No hay imagen QR disponible');
+      this.notificationService.showError('No hay imagen QR disponible');
+      return;
+    }
+
+    console.log('📌 URL del QR:', this.qrImageUrl);
+
+    try {
+      let canvas = this.fabricCanvases.get(pageNumber);
+      
+      console.log(`Canvas para página ${pageNumber}:`, canvas ? 'EXISTE' : 'NO EXISTE');
+      
+      if (!canvas) {
+        if (retryCount >= 3) {
+          console.error(`❌ No se pudo inicializar canvas después de ${retryCount} intentos`);
+          this.notificationService.showError(`No se pudo inicializar el canvas para la página ${pageNumber}`);
+          return;
+        }
+        
+        console.log(`🔄 Inicializando canvas para página ${pageNumber}...`);
+        await this.initPageCanvas(pageNumber);
+        
+        // Esperar un poco más para asegurar la inicialización
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        canvas = this.fabricCanvases.get(pageNumber);
+        
+        if (!canvas) {
+          console.warn(`⚠️ Canvas aún no disponible, reintentando...`);
+          return this.addQrToPage(pageNumber, retryCount + 1);
+        }
+        
+        console.log('✅ Canvas inicializado correctamente');
+      }
+
+      console.log('📥 Cargando imagen QR desde URL...');
+      
+      // Cargar imagen QR
+      const qrImage = await FabricImage.fromURL(this.qrImageUrl, {
+        crossOrigin: 'anonymous',
+      });
+
+      console.log('✅ Imagen QR cargada:', qrImage);
+      console.log(`Dimensiones originales: ${qrImage.width}x${qrImage.height}`);
+
+      // Configurar tamaño y posición inicial
+      const centerX = this.STANDARD_PDF_WIDTH / 2 - 50;
+      const centerY = this.STANDARD_PDF_HEIGHT / 2 - 50;
+      const scale = 100 / 300;
+      
+      console.log(`📍 Posición calculada: (${centerX}, ${centerY}), escala: ${scale}`);
+      
+      qrImage.set({
+        left: centerX,
+        top: centerY,
+        scaleX: scale,
+        scaleY: scale,
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+        cornerSize: 12,
+        cornerColor: '#4285F4',
+        cornerStrokeColor: '#FFFFFF',
+        borderColor: '#4285F4',
+        transparentCorners: false
+      });
+
+      console.log('📦 Objetos en canvas ANTES de agregar:', canvas.getObjects().length);
+      
+      // Agregar al canvas ANTES de agregar al mapa (orden correcto)
+      canvas.add(qrImage);
+      console.log('➕ QR agregado al canvas');
+      
+      canvas.setActiveObject(qrImage);
+      console.log('🎯 QR establecido como objeto activo');
+      
+      // Agregar al mapa de QRs
+      if (!this.qrObjects.has(pageNumber)) {
+        this.qrObjects.set(pageNumber, []);
+      }
+      this.qrObjects.get(pageNumber)!.push(qrImage);
+      console.log('💾 QR guardado en mapa');
+
+      // Renderizar DESPUÉS de agregar todo
+      canvas.renderAll();
+      console.log('🎨 Canvas renderizado');
+      
+      console.log('📦 Objetos en canvas DESPUÉS de agregar:', canvas.getObjects().length);
+      console.log('📊 Total QRs en página:', this.qrObjects.get(pageNumber)?.length || 0);
+
+      // Guardar referencia para eventos
+      qrImage.on('modified', () => this.onQrModified(pageNumber, qrImage));
+      qrImage.on('removed', () => this.onQrRemoved(pageNumber, qrImage));
+
+      console.log(`✅ ✅ ✅ QR agregado exitosamente a página ${pageNumber}`);
+      this.notificationService.showSuccess(`QR agregado a la página ${pageNumber}`);
+    } catch (error: any) {
+      console.error('❌❌❌ Error al agregar QR:', error);
+      console.error('Stack:', error.stack);
+      this.notificationService.showError('Error al agregar QR: ' + (error.message || 'Error desconocido'));
+    }
+  }
+
+  /**
+   * Eliminar QR seleccionado
+   */
+  removeSelectedQr(): void {
+    if (!this.selectedQr) {
+      this.notificationService.showError('No hay QR seleccionado');
+      return;
+    }
+
+    const { page, index } = this.selectedQr;
+    this.removeQrFromPage(page, index);
+  }
+
+  /**
+   * Eliminar QR de una página específica
+   */
+  removeQrFromPage(pageNumber: number, index: number): void {
+    const canvas = this.fabricCanvases.get(pageNumber);
+    const qrs = this.qrObjects.get(pageNumber);
+
+    if (canvas && qrs && qrs[index]) {
+      canvas.remove(qrs[index]);
+      qrs.splice(index, 1);
+      canvas.renderAll();
+      
+      // Limpiar selección si el QR eliminado estaba seleccionado
+      if (this.selectedQr && this.selectedQr.page === pageNumber && this.selectedQr.index === index) {
+        this.selectedQr = null;
+      }
+      
+      this.notificationService.showSuccess('QR eliminado');
+    }
+  }
+
+  /**
+   * Obtener el total de QRs en todas las páginas
+   */
+  getTotalQrsCount(): number {
+    let total = 0;
+    this.qrObjects.forEach(qrs => {
+      total += qrs.length;
+    });
+    return total;
+  }
+
+  /**
+   * Inicializar canvas para una página específica
+   */
+  private async initPageCanvas(pageNumber: number): Promise<void> {
+    if (this.fabricCanvases.has(pageNumber)) {
+      return; // Ya existe
+    }
+
+    await this.renderSinglePage(pageNumber);
+  }
+
+  /**
+   * Renderizar todas las páginas del PDF (modo iLovePDF)
+   */
+  private async renderAllPages(): Promise<void> {
+    if (!this.pdfDoc) {
+      return;
+    }
+
+    // Limpiar canvas existentes
+    this.fabricCanvases.forEach(canvas => canvas.dispose());
+    this.fabricCanvases.clear();
+    this.pdfPages.clear();
+    this.qrObjects.clear();
+
+    // Renderizar cada página
+    for (let pageNum = 1; pageNum <= this.totalPages; pageNum++) {
+      await this.renderSinglePage(pageNum);
+    }
+
+    // Cargar QRs existentes si hay
+    await this.loadExistingQrs();
+  }
+
+  /**
+   * Renderizar una página individual
+   */
+  private async renderSinglePage(pageNumber: number, retryCount: number = 0): Promise<void> {
+    try {
+      const page = await this.pdfDoc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1.0 });
+      
+      // Calcular escala para ajustar a tamaño estándar
+      const scaleX = this.STANDARD_PDF_WIDTH / viewport.width;
+      const scaleY = this.STANDARD_PDF_HEIGHT / viewport.height;
+      const scale = Math.min(scaleX, scaleY);
+      const scaledViewport = page.getViewport({ scale });
+
+      // Crear canvas temporal para renderizar PDF
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = this.STANDARD_PDF_WIDTH;
+      tempCanvas.height = this.STANDARD_PDF_HEIGHT;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) {
+        throw new Error('No se pudo obtener contexto 2D');
+      }
+
+      tempCtx.fillStyle = 'white';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // Calcular offset de centrado
+      const offsetX = (this.STANDARD_PDF_WIDTH - scaledViewport.width) / 2;
+      const offsetY = (this.STANDARD_PDF_HEIGHT - scaledViewport.height) / 2;
+
+      // Renderizar PDF
+      const renderContext = {
+        canvasContext: tempCtx,
+        viewport: scaledViewport,
+        transform: [1, 0, 0, 1, offsetX, offsetY]
+      };
+
+      await page.render(renderContext).promise;
+
+      // Crear imagen de Fabric.js desde el canvas
+      const pdfImage = await FabricImage.fromURL(tempCanvas.toDataURL(), {
+        crossOrigin: 'anonymous',
+      });
+      
+      // Configurar propiedades después de cargar
+      pdfImage.set({
+        selectable: false,
+        evented: false,
+        lockMovementX: true,
+        lockMovementY: true,
+        lockRotation: true,
+        lockScalingX: true,
+        lockScalingY: true,
+        hasControls: false,
+        hasBorders: false,
+      });
+
+      pdfImage.set({
+        left: 0,
+        top: 0,
+        width: this.STANDARD_PDF_WIDTH,
+        height: this.STANDARD_PDF_HEIGHT,
+      });
+
+      // Esperar a que el canvas esté disponible en el DOM
+      const canvasElement = await this.waitForCanvasElement(`fabric-canvas-${pageNumber}`, 10, 200);
+      
+      if (!canvasElement) {
+        throw new Error(`No se pudo encontrar el elemento canvas para la página ${pageNumber} después de varios intentos`);
+      }
+
+      canvasElement.width = this.STANDARD_PDF_WIDTH;
+      canvasElement.height = this.STANDARD_PDF_HEIGHT;
+      canvasElement.style.width = `${this.STANDARD_PDF_WIDTH}px`;
+      canvasElement.style.height = `${this.STANDARD_PDF_HEIGHT}px`;
+
+      const fabricCanvas = new Canvas(canvasElement, {
+        width: this.STANDARD_PDF_WIDTH,
+        height: this.STANDARD_PDF_HEIGHT,
+        selection: true,
+        preserveObjectStacking: true,
+        backgroundColor: 'white'
+      });
+
+      // Configurar controles personalizados para este canvas
+      this.configureFabricControls(fabricCanvas);
+
+      // Agregar PDF como fondo (al agregarlo primero, estará en el fondo)
+      fabricCanvas.add(pdfImage);
+      fabricCanvas.renderAll();
+
+      // Guardar referencias
+      this.fabricCanvases.set(pageNumber, fabricCanvas);
+      this.pdfPages.set(pageNumber, pdfImage);
+      this.qrObjects.set(pageNumber, []);
+
+      // Configurar eventos del canvas
+      this.configureCanvasEvents(fabricCanvas, pageNumber);
+
+    } catch (error: any) {
+      if (!environment.production) {
+        console.error(`Error al renderizar página ${pageNumber}:`, error);
+      }
+      this.notificationService.showError(`Error al renderizar página ${pageNumber}`);
+    }
+  }
+
+  /**
+   * Esperar a que un elemento canvas esté disponible en el DOM
+   */
+  private async waitForCanvasElement(elementId: string, maxAttempts: number = 10, delayMs: number = 200): Promise<HTMLCanvasElement | null> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const element = document.getElementById(elementId) as HTMLCanvasElement;
+      if (element) {
+        return element;
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    return null;
+  }
+
+  /**
+   * Configurar eventos del canvas para una página
+   */
+  private configureCanvasEvents(canvas: Canvas, pageNumber: number): void {
+    // Evento: Selección creada
+    canvas.on('selection:created', (e: any) => {
+      const obj = e.selected?.[0];
+      if (obj && obj !== this.pdfPages.get(pageNumber)) {
+        const qrs = this.qrObjects.get(pageNumber) || [];
+        const index = qrs.indexOf(obj);
+        if (index > -1) {
+          this.selectedQr = { page: pageNumber, index };
+        }
+      }
+    });
+
+    // Evento: Selección limpiada
+    canvas.on('selection:cleared', () => {
+      this.selectedQr = null;
+    });
+
+    // Evento: Objeto en movimiento - aplicar límites por página
+    canvas.on('object:moving', (e: any) => {
+      const obj = e.target;
+      if (!obj) return;
+
+      // Verificar si es un QR (no el PDF de fondo)
+      const pdfImage = this.pdfPages.get(pageNumber);
+      if (obj === pdfImage) return;
+
+      // Aplicar límites del canvas para esta página
+      this.constrainObjectToCanvas(obj, canvas);
+    });
+
+    // Evento: Objeto modificado - guardar cambios
+    canvas.on('object:modified', (e: any) => {
+      const obj = e.target;
+      if (!obj) return;
+
+      // Verificar si es un QR
+      const pdfImage = this.pdfPages.get(pageNumber);
+      if (obj === pdfImage) return;
+
+      this.onQrModified(pageNumber, obj);
+    });
+
+    // Agregar tecla Delete para eliminar QR seleccionado
+    canvas.on('selection:created', (e: any) => {
+      const obj = e.selected?.[0];
+      const pdfImage = this.pdfPages.get(pageNumber);
+      
+      if (obj && obj !== pdfImage) {
+        console.log(`✅ QR seleccionado en página ${pageNumber}`);
+        
+        // Evento de teclado para Delete
+        const deleteHandler = (evt: KeyboardEvent) => {
+          if ((evt.key === 'Delete' || evt.key === 'Backspace') && canvas.getActiveObject() === obj) {
+            console.log('🗑️ Tecla Delete/Backspace presionada');
+            this.deleteQr(obj, canvas, pageNumber);
+            document.removeEventListener('keydown', deleteHandler);
+          }
+        };
+        
+        document.addEventListener('keydown', deleteHandler);
+        
+        // Limpiar evento cuando se deselecciona
+        canvas.once('selection:cleared', () => {
+          document.removeEventListener('keydown', deleteHandler);
+        });
+      }
+    });
+  }
+
+  /**
+   * Restringir objeto dentro de los límites del canvas (por página)
+   */
+  private constrainObjectToCanvas(obj: any, canvas: Canvas): void {
+    if (!obj) return;
+
+    const boundingRect = obj.getBoundingRect();
+    const objWidth = boundingRect.width;
+    const objHeight = boundingRect.height;
+
+    // Límites del canvas (estándar 595x842)
+    const margin = 10; // Margen de seguridad
+    const minX = margin;
+    const minY = margin;
+    const maxX = this.STANDARD_PDF_WIDTH - objWidth - margin;
+    const maxY = this.STANDARD_PDF_HEIGHT - objHeight - margin;
+
+    // Obtener posición actual
+    let currentLeft = obj.left || 0;
+    let currentTop = obj.top || 0;
+
+    // Aplicar restricciones
+    if (currentLeft < minX) currentLeft = minX;
+    if (currentLeft > maxX) currentLeft = maxX;
+    if (currentTop < minY) currentTop = minY;
+    if (currentTop > maxY) currentTop = maxY;
+
+    // Actualizar posición si cambió
+    obj.set({
+      left: currentLeft,
+      top: currentTop
+    });
+
+    obj.setCoords();
+  }
+
+  /**
+   * Mostrar menú contextual para eliminar QR
+   */
+  private showContextMenu(event: MouseEvent, obj: any, canvas: Canvas, pageNumber: number): void {
+    console.log('🖱️ showContextMenu llamado', { pageNumber, x: event.clientX, y: event.clientY });
+    
+    // Remover menú anterior si existe
+    const oldMenu = document.querySelector('.context-menu');
+    if (oldMenu) {
+      oldMenu.remove();
+    }
+
+    // Crear menú contextual
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.position = 'fixed';
+    menu.style.left = `${event.clientX}px`;
+    menu.style.top = `${event.clientY}px`;
+    menu.style.background = 'white';
+    menu.style.border = '1px solid #ddd';
+    menu.style.borderRadius = '8px';
+    menu.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    menu.style.zIndex = '99999';
+    menu.style.padding = '8px 0';
+    menu.style.minWidth = '160px';
+    menu.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    // Opción: Eliminar QR
+    const deleteOption = document.createElement('div');
+    deleteOption.className = 'context-menu-item';
+    deleteOption.style.padding = '10px 16px';
+    deleteOption.style.cursor = 'pointer';
+    deleteOption.style.display = 'flex';
+    deleteOption.style.alignItems = 'center';
+    deleteOption.style.gap = '10px';
+    deleteOption.style.color = '#dc2626';
+    deleteOption.style.fontSize = '14px';
+    deleteOption.innerHTML = `
+      <span class="material-symbols-outlined" style="font-size: 20px;">delete</span>
+      <span>Eliminar QR</span>
+    `;
+
+    // Hover effect
+    deleteOption.addEventListener('mouseenter', () => {
+      deleteOption.style.background = '#fee2e2';
+    });
+    deleteOption.addEventListener('mouseleave', () => {
+      deleteOption.style.background = 'transparent';
+    });
+
+    // Click: Eliminar QR
+    deleteOption.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('🗑️ Click en eliminar QR');
+      this.deleteQr(obj, canvas, pageNumber);
+      menu.remove();
+    });
+
+    menu.appendChild(deleteOption);
+    document.body.appendChild(menu);
+    
+    console.log('✅ Menú contextual agregado al DOM', menu);
+
+    // Cerrar menú al hacer click fuera
+    const closeMenu = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        console.log('❌ Click fuera del menú, cerrando');
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+
+    // Delay para evitar que se cierre inmediatamente
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 100);
+  }
+
+  /**
+   * Eliminar un QR del canvas
+   */
+  private deleteQr(obj: any, canvas: Canvas, pageNumber: number): void {
+    // Eliminar del canvas
+    canvas.remove(obj);
+    canvas.renderAll();
+
+    // Eliminar del mapa de QRs
+    const qrs = this.qrObjects.get(pageNumber);
+    if (qrs) {
+      const index = qrs.indexOf(obj);
+      if (index > -1) {
+        qrs.splice(index, 1);
+      }
+    }
+
+    // Limpiar selección si era el QR seleccionado
+    if (this.selectedQr?.page === pageNumber) {
+      const qrs = this.qrObjects.get(pageNumber);
+      if (qrs) {
+        const index = qrs.indexOf(obj);
+        if (this.selectedQr.index === index) {
+          this.selectedQr = null;
+        }
+      }
+    }
+
+    this.notificationService.showSuccess('QR eliminado correctamente');
+  }
+
+  /**
+   * Cargar QRs existentes desde el documento
+   */
+  private async loadExistingQrs(): Promise<void> {
+    if (!this.document?.qr_position || !this.qrImageUrl) {
+      return;
+    }
+
+    // Por ahora, cargar el QR en la primera página (compatibilidad)
+    // En el futuro, se puede extender para soportar múltiples QRs guardados
+    const pos = this.document.qr_position;
+    const pageNumber = 1; // Por defecto primera página
+
+    const canvas = this.fabricCanvases.get(pageNumber);
+    if (!canvas) {
+      return;
+    }
+
+    try {
+      const qrImage = await FabricImage.fromURL(this.qrImageUrl, {
+        crossOrigin: 'anonymous',
+      });
+
+      qrImage.set({
+        left: pos.x || 50,
+        top: pos.y || 50,
+        scaleX: (pos.width || 100) / 300,
+        scaleY: (pos.height || 100) / 300,
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+      });
+
+      canvas.add(qrImage);
+      canvas.renderAll();
+
+      if (!this.qrObjects.has(pageNumber)) {
+        this.qrObjects.set(pageNumber, []);
+      }
+      this.qrObjects.get(pageNumber)!.push(qrImage);
+
+      qrImage.on('modified', () => this.onQrModified(pageNumber, qrImage));
+    } catch (error: any) {
+      if (!environment.production) {
+        console.error('Error al cargar QR existente:', error);
+      }
+    }
+  }
+
+  /**
+   * Callback cuando un QR es modificado
+   */
+  private onQrModified(pageNumber?: number, qrImage?: FabricImage): void {
+    // Si se proporciona página específica, renderizar solo ese canvas
+    if (pageNumber !== undefined) {
+      const canvas = this.fabricCanvases.get(pageNumber);
+      if (canvas) {
+        canvas.renderAll();
+      }
+    } else {
+      // Modo compatibilidad: renderizar canvas actual
+      const canvas = this.fabricCanvasInstance;
+      if (canvas) {
+        canvas.renderAll();
+      }
+    }
+  }
+
+  /**
+   * Callback cuando un QR es removido
+   */
+  private onQrRemoved(pageNumber: number, qrImage: FabricImage): void {
+    const qrs = this.qrObjects.get(pageNumber);
+    if (qrs) {
+      const index = qrs.indexOf(qrImage);
+      if (index > -1) {
+        qrs.splice(index, 1);
+      }
+    }
+  }
+
   getQrInfo(): { url: string; size: string; position: string } | null {
     if (!this.qrObject || !this.document) return null;
 
@@ -1858,10 +2954,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         link.href = url;
         link.download = this.document?.original_filename || 'documento.pdf';
         link.style.display = 'none';
+        
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
+        
         this.notificationService.showSuccess('✅ PDF con QR descargado exitosamente');
       })
       .catch(error => {

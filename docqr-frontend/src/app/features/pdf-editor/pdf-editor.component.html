@@ -53,6 +53,18 @@
               <span class="text-gray-500">Tamaño del QR:</span>
               <span class="font-medium text-gray-900 ml-2">{{ getQrInfo()?.size }}</span>
             </div>
+            <!-- Selector de página (solo si hay más de 1 página) -->
+            <div *ngIf="totalPages > 1" class="flex items-center gap-2">
+              <span class="text-gray-500">Página:</span>
+              <select
+                [(ngModel)]="currentPage"
+                (change)="onPageChange()"
+                class="px-3 py-1 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 focus:border-primary focus:ring-primary focus:outline-none">
+                <option *ngFor="let page of getPageNumbers()" [value]="page">
+                  {{ page }} de {{ totalPages }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -63,8 +75,9 @@
         <div class="flex-1 bg-white rounded-xl shadow-lg border border-gray-200 p-6">
           <!-- Loading -->
           <div *ngIf="loading" class="flex flex-col items-center justify-center py-20">
-            <span class="material-symbols-outlined text-6xl text-gray-300 mb-4 animate-spin">sync</span>
-            <p class="text-gray-600 font-medium">Cargando documento...</p>
+            <span class="material-symbols-outlined text-6xl text-primary mb-4 animate-spin">sync</span>
+            <p class="text-gray-900 font-semibold text-lg mb-2">Analizando documento...</p>
+            <p class="text-gray-500 text-sm">El sistema está verificando las páginas y preparando el editor</p>
           </div>
 
           <!-- Error -->
@@ -79,27 +92,49 @@
             </button>
           </div>
 
-          <!-- Visor de PDF con QR usando Arquitectura de Doble Canvas (iLovePDF) -->
-          <!-- Los canvas deben estar siempre en el DOM para que ViewChild los encuentre -->
+          <!-- Visor de PDF estilo iLovePDF: Todas las páginas en scroll vertical -->
           <div 
             class="relative"
             [style.display]="(!loading && pdfUrl) ? 'block' : 'none'">
             
-            <!-- Contenedor del Canvas -->
+            <!-- Contenedor scrollable con todas las páginas -->
             <div 
-              #canvasContainer
-              class="relative bg-gray-100 rounded-lg overflow-auto border-2 border-gray-300 mx-auto"
-              style="max-width: 100%; max-height: 80vh; display: flex; justify-content: center; align-items: flex-start;">
+              #pagesContainer
+              class="relative bg-gray-100 rounded-lg overflow-y-auto border-2 border-gray-300 mx-auto"
+              style="max-width: 100%; max-height: 80vh; display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 20px;">
               
-              <!-- Contenedor para el canvas único de Fabric.js -->
+              <!-- Renderizar todas las páginas -->
               <div 
-                class="relative" 
-                style="position: relative; display: inline-block; width: 595px; height: 842px;">
-                <!-- Canvas único: Fabric.js con PDF como fondo y QR como objeto interactivo -->
-                <canvas 
-                  #fabricCanvas
-                  style="display: block; background-color: white; width: 595px; height: 842px;">
-                </canvas>
+                *ngFor="let pageNum of getPageNumbers(); let i = index"
+                [id]="'pdf-page-' + pageNum"
+                class="relative bg-white shadow-lg rounded-lg"
+                style="position: relative; margin-bottom: 20px; min-width: 595px; min-height: 842px;">
+                
+                <!-- Canvas para cada página -->
+                <div class="relative" style="position: relative; display: inline-block; min-width: 595px; min-height: 842px;">
+                  <canvas 
+                    [id]="'fabric-canvas-' + pageNum"
+                    class="pdf-page-canvas"
+                    width="595"
+                    height="842"
+                    style="display: block; border: 1px solid #e5e7eb; width: 595px; height: 842px;">
+                  </canvas>
+                  
+                  <!-- Badge de número de página (solo si es multipágina) -->
+                  <div *ngIf="showAllPages && totalPages > 1" class="absolute top-2 left-2 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold shadow-md">
+                    Página {{ pageNum }} de {{ totalPages }}
+                  </div>
+                  
+                  <!-- Botón para agregar QR a esta página (solo si es multipágina) -->
+                  <button
+                    *ngIf="showAllPages && totalPages > 1"
+                    type="button"
+                    (click)="addQrToPage(pageNum)"
+                    class="absolute top-2 right-2 bg-primary text-white px-3 py-2 rounded-lg shadow-md hover:bg-primary/90 transition-all flex items-center gap-2 text-sm font-medium">
+                    <span class="material-symbols-outlined text-lg">add</span>
+                    Agregar QR
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -110,6 +145,8 @@
                 <div class="flex-1">
                   <p class="text-sm font-medium text-blue-900 mb-1">Instrucciones:</p>
                   <ul class="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                    <li *ngIf="showAllPages && totalPages > 1">Haz clic en "Agregar QR" en cualquier página para agregar un código QR</li>
+                    <li *ngIf="showAllPages && totalPages > 1">Puedes agregar múltiples QRs en diferentes páginas</li>
                     <li>Arrastra el código QR para moverlo sobre el documento</li>
                     <li>Arrastra el círculo azul en la esquina inferior derecha para cambiar el tamaño</li>
                     <li>Asegúrate de que el QR esté completamente dentro del documento</li>
