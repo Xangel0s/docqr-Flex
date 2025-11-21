@@ -178,9 +178,11 @@ class PdfProcessorService
                 }
             }
 
+            // Usar coordenadas exactas del frontend (sin offset de calibración)
+            // El frontend calcula las coordenadas correctamente en el espacio estándar (595x842)
+            // y las convertimos al espacio real del PDF usando porcentajes
             $pdfY = $y;
-            $x = $x + 15;
-            $pdfY = $pdfY + 15;
+            // NOTA: Se eliminó el offset de +15px que causaba desplazamiento incorrecto
             
             $qrBottom = $pdfY + $height;
             $qrRight = $x + $width;
@@ -210,7 +212,7 @@ class PdfProcessorService
             
             // LÓGICA MATEMÁTICA EXACTA: Usar porcentajes puros para conversión base
             // Las coordenadas $x y $pdfY ya están calculadas usando porcentajes relativos
-            // (xPercent * pageWidth, yPercent * pageHeight), y luego se aplicó el offset de calibración
+            // (xPercent * pageWidth, yPercent * pageHeight) - sin offsets adicionales
             
             // CRÍTICO: Forzar que el QR sea cuadrado usando width para ambos parámetros
             // Esto garantiza que width === height siempre
