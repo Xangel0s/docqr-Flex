@@ -27,6 +27,12 @@ export class UploadComponent implements OnInit {
   uploadProgress: number = 0;
   dragOver: boolean = false;
   sidebarOpen: boolean = false;
+  
+  // Validación de código en tiempo real
+  codeExists: boolean = false;
+  checkingCode: boolean = false;
+  folderNameError: string | null = null;
+  private checkCodeTimeout: any = null;
 
   // Tipos de documentos con sus siglas
   documentTypes = [
@@ -145,10 +151,78 @@ export class UploadComponent implements OnInit {
   }
 
   /**
+   * Verificar si el código existe (con debounce)
+   */
+  checkCodeExists(): void {
+    // Limpiar timeout anterior
+    if (this.checkCodeTimeout) {
+      clearTimeout(this.checkCodeTimeout);
+    }
+
+    // Si el campo está vacío, no verificar y limpiar estado
+    if (!this.folderName.trim() || !this.documentType) {
+      this.codeExists = false;
+      this.folderNameError = null;
+      this.checkingCode = false;
+      return;
+    }
+
+    // Validar formato del código
+    const codePattern = /^[a-zA-Z0-9\-]+$/;
+    if (!codePattern.test(this.folderName.trim())) {
+      this.folderNameError = 'El código solo puede contener letras, números y guiones';
+      this.codeExists = false;
+      this.checkingCode = false;
+      return;
+    }
+
+    // IMPORTANTE: Mostrar estado de verificación mientras espera
+    // Esto evita el "falso verde" - no mostrar verde hasta verificar
+    this.checkingCode = true;
+    this.codeExists = false;
+    this.folderNameError = null;
+
+    // Debounce de 500ms
+    this.checkCodeTimeout = setTimeout(() => {
+      const fullFolderName = this.documentType + (this.folderName.trim() ? '-' + this.folderName.trim() : '');
+      
+      this.docqrService.checkCodeExists(fullFolderName).subscribe({
+        next: (response) => {
+          this.checkingCode = false;
+          this.codeExists = response.exists;
+          if (response.exists) {
+            this.folderNameError = 'Este código ya existe en el sistema. Por favor elige otro nombre único.';
+          } else {
+            this.folderNameError = null;
+          }
+        },
+        error: () => {
+          this.checkingCode = false;
+          // En caso de error, no bloquear el formulario
+          this.codeExists = false;
+          this.folderNameError = null;
+        }
+      });
+    }, 500);
+  }
+
+  /**
    * Manejar cambio de tipo de documento
-   * Solo limpia el campo editable si estaba vacío
+   * Limpia el estado y valida de nuevo si hay código
    */
   onDocumentTypeChange(): void {
+    // Limpiar estado de validación anterior
+    this.codeExists = false;
+    this.folderNameError = null;
+    this.checkingCode = false;
+    
+    // Si hay código escrito, validar de nuevo con el nuevo tipo
+    if (this.folderName.trim()) {
+      // Pequeño delay para asegurar que el tipo se actualizó
+      setTimeout(() => {
+        this.checkCodeExists();
+      }, 100);
+    }
   }
 
   /**
@@ -158,7 +232,10 @@ export class UploadComponent implements OnInit {
     return !!(
       this.selectedFile &&
       this.documentType &&
-      this.folderName.trim()
+      this.folderName.trim() &&
+      !this.codeExists &&
+      !this.folderNameError &&
+      !this.checkingCode
     );
   }
 
@@ -178,14 +255,20 @@ export class UploadComponent implements OnInit {
     }
 
     if (!this.folderName.trim()) {
-      this.notificationService.showError('Por favor ingresa el código del documento');
+      this.folderNameError = 'Por favor ingresa el código del documento';
       return;
     }
 
     // Validar formato del código (solo alfanumérico y guiones)
     const codePattern = /^[a-zA-Z0-9\-]+$/;
     if (!codePattern.test(this.folderName.trim())) {
-      this.notificationService.showError('El código solo puede contener letras, números y guiones');
+      this.folderNameError = 'El código solo puede contener letras, números y guiones';
+      return;
+    }
+
+    // Validar que el código no esté duplicado
+    if (this.codeExists || this.folderNameError) {
+      // El mensaje ya está mostrado debajo del campo, no mostrar notificación
       return;
     }
 
@@ -229,7 +312,23 @@ export class UploadComponent implements OnInit {
         } else if (error.status === 0) {
           errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión.';
         } else if (error.status === 422) {
-          errorMessage = error.error?.message || 'Error de validación. Verifica que el PDF sea válido y tenga solo 1 página.';
+          // Error de validación - mostrar mensaje específico
+          if (error.error?.errors) {
+            // Errores de validación de Laravel
+            const validationErrors = error.error.errors;
+            const firstError = Object.values(validationErrors)[0];
+            if (Array.isArray(firstError) && firstError.length > 0) {
+              errorMessage = firstError[0] as string;
+            } else if (error.error.message) {
+              errorMessage = error.error.message;
+            } else {
+              errorMessage = 'Error de validación. Verifica que el PDF sea válido.';
+            }
+          } else if (error.error?.message) {
+            errorMessage = error.error.message;
+          } else {
+            errorMessage = 'Error de validación. Verifica que el PDF sea válido.';
+          }
         } else if (error.status === 500) {
           errorMessage = 'Error en el servidor. Por favor, intenta nuevamente.';
         }

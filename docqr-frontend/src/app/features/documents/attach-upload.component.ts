@@ -287,25 +287,40 @@ export class AttachUploadComponent implements OnInit {
   }
 
   /**
-   * Descargar imagen del QR
+   * Descargar imagen del QR con resolución seleccionada
    */
-  downloadQr(): void {
-    if (!this.document?.qr_image_url || !this.document?.qr_id) return;
+  downloadQr(resolution: 'original' | 'hd' = 'original'): void {
+    if (!this.document?.qr_id) return;
 
-    // Descargar la imagen del QR
-    const url = this.qrImageUrlWithCache || this.document.qr_image_url;
-    fetch(url)
-      .then(response => response.blob())
+    // Construir URL con parámetro de resolución
+    const baseUrl = this.document.qr_image_url || `/api/files/qr/${this.document.qr_id}`;
+    const url = new URL(baseUrl, window.location.origin);
+    url.searchParams.set('resolution', resolution);
+    url.searchParams.set('download', 'true');
+    
+    const filename = resolution === 'hd' 
+      ? `qr-${this.document.qr_id}-1024x1024.png`
+      : `qr-${this.document.qr_id}.png`;
+
+    fetch(url.toString())
+      .then(response => {
+        if (!response.ok) throw new Error('Error al descargar QR');
+        return response.blob();
+      })
       .then(blob => {
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = `qr-${this.document!.qr_id}.png`;
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(downloadUrl);
-        this.notificationService.showSuccess('QR descargado exitosamente');
+        this.notificationService.showSuccess(
+          resolution === 'hd' 
+            ? 'QR en alta resolución descargado exitosamente' 
+            : 'QR descargado exitosamente'
+        );
       })
       .catch(() => {
         this.notificationService.showError('Error al descargar el QR');

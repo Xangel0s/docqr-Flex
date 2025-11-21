@@ -151,18 +151,32 @@
               <span class="material-symbols-outlined text-orange-400 text-lg">sync</span>
             </button>
 
-            <!-- Descargar QR Solo -->
-            <button 
-              type="button"
-              (click)="downloadQrImage()"
-              [disabled]="!qrImageUrl"
-              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100">
-              <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-gray-600">qr_code</span>
-                <span class="text-sm font-medium text-gray-700">Descargar QR</span>
+            <!-- Descargar QR con selector de resolución -->
+            <div class="w-full">
+              <label class="text-xs font-medium text-gray-600 mb-2 block">Descargar QR:</label>
+              <div class="flex gap-2">
+                <button 
+                  type="button"
+                  (click)="downloadQrImage('original')"
+                  [disabled]="!qrImageUrl"
+                  class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium">
+                  <span class="material-symbols-outlined text-base">download</span>
+                  Original
+                </button>
+                <button 
+                  type="button"
+                  (click)="downloadQrImage('hd')"
+                  [disabled]="!qrImageUrl"
+                  class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium">
+                  <span class="material-symbols-outlined text-base">high_quality</span>
+                  HD (1024px)
+                </button>
               </div>
-              <span class="material-symbols-outlined text-gray-400 text-lg">download</span>
-            </button>
+              <p class="text-xs text-gray-500 text-center mt-1">
+                <span class="font-medium">Original:</span> Para web • 
+                <span class="font-medium">HD:</span> Para impresión
+              </p>
+            </div>
 
             <!-- Descargar PDF con QR -->
             <button 

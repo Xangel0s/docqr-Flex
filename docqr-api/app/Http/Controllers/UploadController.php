@@ -37,24 +37,84 @@ class UploadController extends Controller
     public function upload(Request $request): JsonResponse
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'file' => 'required|file|mimes:pdf|max:512000', // Máximo 500MB para drag and drop
-                'folder_name' => 'required|string|max:100',
-            ], [
-                'file.max' => 'El archivo PDF no puede exceder 500MB. Tamaño actual: ' . 
-                    ($request->hasFile('file') ? round($request->file('file')->getSize() / 1024 / 1024, 2) . 'MB' : 'N/A')
-            ]);
-
-            if ($validator->fails()) {
+            // Validar que el archivo existe primero
+            if (!$request->hasFile('file')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Error de validación',
-                    'errors' => $validator->errors()
+                    'message' => 'No se recibió ningún archivo. Por favor, selecciona un archivo PDF.',
+                    'errors' => ['file' => ['El archivo es requerido']]
                 ], 422);
             }
 
             $file = $request->file('file');
             $folderName = $request->input('folder_name');
+            $fileSize = $file->getSize();
+            $mimeType = $file->getMimeType();
+            $originalName = $file->getClientOriginalName();
+            $hasPdfExtension = str_ends_with(strtolower($originalName), '.pdf');
+
+            // Log para debugging
+            Log::info('Intento de upload:', [
+                'file_name' => $originalName,
+                'file_size' => $fileSize,
+                'file_size_mb' => round($fileSize / 1024 / 1024, 2),
+                'mime_type' => $mimeType,
+                'has_pdf_extension' => $hasPdfExtension,
+                'is_valid' => $file->isValid(),
+                'folder_name' => $folderName
+            ]);
+
+            // Validar tamaño antes de la validación de Laravel
+            $maxSizeKB = 512000; // 500MB en KB
+            if ($fileSize > $maxSizeKB * 1024) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "El archivo PDF es demasiado grande. Tamaño máximo: 500MB. Tamaño actual: " . round($fileSize / 1024 / 1024, 2) . "MB",
+                    'errors' => ['file' => ['El archivo excede el tamaño máximo permitido']]
+                ], 422);
+            }
+
+            // Validar extensión
+            if (!$hasPdfExtension) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El archivo debe tener extensión .pdf',
+                    'errors' => ['file' => ['El archivo debe ser un PDF']]
+                ], 422);
+            }
+
+            // Validar MIME type o header del archivo
+            $allowedMimes = ['application/pdf', 'application/x-pdf', 'application/octet-stream'];
+            if (!in_array($mimeType, $allowedMimes)) {
+                // Verificar header como último recurso
+                $handle = fopen($file->getRealPath(), 'rb');
+                $header = fread($handle, 4);
+                fclose($handle);
+                
+                if ($header !== '%PDF') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "El archivo no es un PDF válido. Tipo MIME detectado: {$mimeType}",
+                        'errors' => ['file' => ['El archivo debe ser un PDF válido']]
+                    ], 422);
+                }
+            }
+
+            // Validar folder_name con validación de unicidad
+            $request->validate([
+                'folder_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                    'regex:/^(CE|IN|SU)-[A-Za-z0-9ÑñÁÉÍÓÚáéíóúÜü\-]+$/u',
+                    'unique:qr_files,folder_name'
+                ]
+            ], [
+                'folder_name.required' => 'El nombre de carpeta es requerido',
+                'folder_name.regex' => 'El formato debe ser: TIPO-CODIGO (ej: CE-12345, IN-ABC, SU-XYZ). Solo se permiten tipos: CE, IN, SU.',
+                'folder_name.unique' => 'Este código ya existe en el sistema. Por favor elige otro nombre único.',
+                'folder_name.max' => 'El nombre de carpeta no puede exceder 100 caracteres'
+            ]);
 
             $integrityCheck = $this->pdfValidator->validatePdfIntegrity($file);
             if (!$integrityCheck['valid']) {
@@ -81,14 +141,19 @@ class UploadController extends Controller
             }
             
             // Solo validar número de páginas para PDFs pequeños (drag and drop requiere 1 página)
-            // Para PDFs grandes, saltar esta validación
+            // Para PDFs grandes (>10MB), saltar esta validación
+            // Para PDFs medianos (3-10MB), también saltar validación de páginas para evitar problemas
+            $fileSizeMB = $file->getSize() / 1024 / 1024;
             if (!isset($integrityCheck['skip_fpdi_validation']) || !$integrityCheck['skip_fpdi_validation']) {
-                $pdfInfo = $this->pdfValidator->validatePdfPages($file);
-                if (!$pdfInfo['valid']) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $pdfInfo['message']
-                    ], 422);
+                // Solo validar páginas para PDFs pequeños (<3MB)
+                if ($fileSizeMB < 3) {
+                    $pdfInfo = $this->pdfValidator->validatePdfPages($file);
+                    if (!$pdfInfo['valid']) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => $pdfInfo['message']
+                        ], 422);
+                    }
                 }
             }
 

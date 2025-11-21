@@ -99,14 +99,33 @@
               <span class="material-symbols-outlined transition-transform duration-200 hover:scale-110">content_copy</span>
               Copiar QR
             </button>
-            <button
-              type="button"
-              (click)="downloadQr()"
-              [disabled]="!document.qr_image_url"
-              class="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-primary bg-primary text-white hover:bg-primary/90 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 hover:shadow-lg hover:shadow-primary/30">
-              <span class="material-symbols-outlined transition-transform duration-200 hover:scale-110">download</span>
-              Descargar QR
-            </button>
+            
+            <!-- Selector de resolución para descarga -->
+            <div class="flex flex-col gap-2">
+              <label class="text-xs font-medium text-gray-600 mb-1">Descargar QR:</label>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  (click)="downloadQr('original')"
+                  [disabled]="!document.qr_image_url"
+                  class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-primary bg-primary text-white hover:bg-primary/90 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 hover:shadow-md">
+                  <span class="material-symbols-outlined text-base">download</span>
+                  Original
+                </button>
+                <button
+                  type="button"
+                  (click)="downloadQr('hd')"
+                  [disabled]="!document.qr_image_url"
+                  class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 hover:shadow-md">
+                  <span class="material-symbols-outlined text-base">high_quality</span>
+                  HD (1024px)
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 text-center">
+                <span class="font-medium">Original:</span> Para web • 
+                <span class="font-medium">HD:</span> Para impresión
+              </p>
+            </div>
           </div>
 
           <!-- URL del QR -->

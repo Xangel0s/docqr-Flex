@@ -351,9 +351,10 @@ class FileController extends Controller
     }
 
     /**
-     * Servir imagen QR
+     * Servir imagen QR con soporte para múltiples resoluciones
      * 
      * @param string $qrId ID del QR
+     * @param Request $request
      * @return Response
      */
     public function serveQr(string $qrId, Request $request): Response
@@ -369,32 +370,71 @@ class FileController extends Controller
                 abort(404, 'Código QR no encontrado');
             }
 
-            $qrFilename = basename($qrFile->qr_path);
-            $fullPath = Storage::disk('qrcodes')->path($qrFilename);
-
-            if (!file_exists($fullPath)) {
-                abort(404, 'Código QR no encontrado');
+            // Obtener parámetro de resolución (original, hd, 1024)
+            $resolution = $request->query('resolution', 'original');
+            $size = 300; // Tamaño por defecto (original)
+            $filenameSuffix = '';
+            
+            // Determinar tamaño según resolución solicitada
+            if (in_array(strtolower($resolution), ['hd', '1024', 'high'])) {
+                $size = 1024;
+                $filenameSuffix = '-1024x1024';
             }
 
-            $content = file_get_contents($fullPath);
-            $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFilename);
+            // Si se solicita resolución HD, generar QR dinámicamente
+            if ($size === 1024) {
+                $qrUrl = \App\Helpers\UrlHelper::url("/api/view/{$qrId}", $request);
+                $qrGenerator = app(\App\Services\QrGeneratorService::class);
+                
+                // Generar QR temporal en alta resolución
+                $tempQrPath = $qrGenerator->generateWithSize($qrUrl, $qrId . '_temp_hd', $size);
+                $tempQrFilename = basename($tempQrPath);
+                $tempFullPath = Storage::disk('qrcodes')->path($tempQrFilename);
+                
+                if (!file_exists($tempFullPath)) {
+                    abort(404, 'Error al generar QR en alta resolución');
+                }
+                
+                $content = file_get_contents($tempFullPath);
+                $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrId . $filenameSuffix . '.png');
+                
+                // Limpiar archivo temporal después de leerlo
+                @unlink($tempFullPath);
+                $etag = md5($qrId . $size . time());
+            } else {
+                // Usar QR original existente
+                $qrFilename = basename($qrFile->qr_path);
+                $fullPath = Storage::disk('qrcodes')->path($qrFilename);
+
+                if (!file_exists($fullPath)) {
+                    abort(404, 'Código QR no encontrado');
+                }
+
+                $content = file_get_contents($fullPath);
+                $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $qrFilename);
+                $etag = md5($fullPath . filemtime($fullPath));
+            }
             
             $isProduction = app()->environment('production');
             $cacheControl = $isProduction 
                 ? 'public, max-age=86400, immutable'
                 : 'public, max-age=3600';
             
-            $etag = md5($fullPath . filemtime($fullPath));
+            // Para descarga, usar Content-Disposition: attachment
+            $disposition = $request->query('download', false) 
+                ? 'attachment; filename="' . $safeFilename . '"'
+                : 'inline; filename="' . $safeFilename . '"';
             
             $response = response($content, 200)
                 ->header('Content-Type', 'image/png')
-                ->header('Content-Disposition', 'inline; filename="' . $safeFilename . '"')
+                ->header('Content-Disposition', $disposition)
                 ->header('Content-Length', strlen($content))
                 ->header('Cache-Control', $cacheControl)
                 ->header('ETag', $etag)
                 ->header('X-Content-Type-Options', 'nosniff');
             
-            if ($request->header('If-None-Match') === $etag) {
+            // Solo usar 304 Not Modified para QR original (no para HD generado dinámicamente)
+            if ($size !== 1024 && $request->header('If-None-Match') === $etag) {
                 return response('', 304)
                     ->header('ETag', $etag)
                     ->header('Cache-Control', $cacheControl);

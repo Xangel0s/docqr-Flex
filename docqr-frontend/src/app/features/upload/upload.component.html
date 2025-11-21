@@ -122,14 +122,37 @@
               {{ documentType || '--' }}
             </div>
             <!-- Campo editable -->
-            <input
-              id="folder-name"
-              type="text"
-              [(ngModel)]="folderName"
-              class="h-10 flex-1 rounded-r-lg border border-l-0 border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:ring-primary focus:outline-none"
-              placeholder="Ingrese código"
-              [class.border-primary]="documentType"
-              required>
+            <div class="flex-1 relative">
+              <input
+                id="folder-name"
+                type="text"
+                [(ngModel)]="folderName"
+                (input)="checkCodeExists()"
+                class="h-10 w-full rounded-r-lg border border-l-0 border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:ring-primary focus:outline-none"
+                [class.border-primary]="documentType"
+                [class.border-red-500]="codeExists || folderNameError"
+                [class.border-green-500]="folderName.trim() && !codeExists && !folderNameError && !checkingCode && documentType && !checkingCode"
+                placeholder="Ingrese código"
+                required>
+              <!-- Indicador de verificación -->
+              <span *ngIf="checkingCode" class="absolute right-3 top-1/2 -translate-y-1/2">
+                <span class="material-symbols-outlined text-gray-400 text-sm animate-spin">sync</span>
+              </span>
+              <span *ngIf="!checkingCode && folderName.trim() && documentType" class="absolute right-3 top-1/2 -translate-y-1/2">
+                <span *ngIf="codeExists || folderNameError" class="material-symbols-outlined text-red-500 text-sm">error</span>
+                <span *ngIf="!codeExists && !folderNameError" class="material-symbols-outlined text-green-500 text-sm">check_circle</span>
+              </span>
+            </div>
+          </div>
+          <!-- Mensaje de error si el código existe o hay error -->
+          <div *ngIf="(codeExists || folderNameError) && folderName.trim() && !checkingCode" class="mt-1 text-xs text-red-600 flex items-center gap-1">
+            <span class="material-symbols-outlined text-xs">error</span>
+            {{ folderNameError || 'Este código ya existe en el sistema. Por favor elige otro nombre único.' }}
+          </div>
+          <!-- Mensaje de éxito si el código está disponible -->
+          <div *ngIf="!codeExists && !folderNameError && folderName.trim() && !checkingCode && documentType" class="mt-1 text-xs text-green-600 flex items-center gap-1">
+            <span class="material-symbols-outlined text-xs">check_circle</span>
+            Código disponible
           </div>
         </div>
       </div>

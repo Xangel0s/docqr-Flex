@@ -1,7 +1,0 @@
-<svg width="180" height="50" xmlns="http://www.w3.org/2000/svg">
-  <!-- Logo placeholder Geofal -->
-  <rect width="180" height="50" fill="#2563EB" rx="4"/>
-  <text x="90" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white" text-anchor="middle">GEOFAL</text>
-  <text x="90" y="45" font-family="Arial, sans-serif" font-size="10" fill="white" text-anchor="middle">DOCQR</text>
-</svg>
-

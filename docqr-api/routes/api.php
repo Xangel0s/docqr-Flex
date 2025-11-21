@@ -46,11 +46,13 @@ Route::middleware([AuthMiddleware::class])->group(function () {
     Route::put('/embed', [EmbedController::class, 'embed']);
 
     // Ruta para recibir PDF modificado con pdf-lib (método iLovePDF)
-    Route::put('/embed-pdf', [EmbedController::class, 'embedPdf']);
+    // Usar POST en lugar de PUT porque PUT no maneja bien FormData con archivos
+    Route::post('/embed-pdf', [EmbedController::class, 'embedPdf']);
 
     // Rutas para gestión de documentos (con rate limiting)
     Route::get('/documents', [DocumentController::class, 'index'])->middleware('throttle:120,1');
     Route::get('/documents/stats', [DocumentController::class, 'stats'])->middleware('throttle:60,1');
+    Route::get('/documents/check-code', [DocumentController::class, 'checkCodeExists'])->middleware('throttle:60,1'); // Verificar si código existe
     Route::post('/documents/create', [DocumentController::class, 'create']); // Crear documento sin PDF
     Route::get('/documents/qr/{qrId}', [DocumentController::class, 'showByQrId']);
     Route::get('/documents/{id}', [DocumentController::class, 'show']);

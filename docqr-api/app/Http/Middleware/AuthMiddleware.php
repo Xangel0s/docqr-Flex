@@ -19,6 +19,18 @@ class AuthMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // TEMPORAL: Deshabilitar autenticación en desarrollo local
+        if (env('APP_ENV') === 'local' && env('DISABLE_AUTH', false)) {
+            // Crear un usuario mock para desarrollo
+            if (!Auth::check()) {
+                $mockUser = \App\Models\User::where('is_active', true)->first();
+                if ($mockUser) {
+                    Auth::login($mockUser);
+                }
+            }
+            return $next($request);
+        }
+
         // Verificar autenticación por sesión
         if (!Auth::check()) {
             return response()->json([

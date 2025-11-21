@@ -37,6 +37,8 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   document: Document | null = null;
   loading: boolean = true;
   saving: boolean = false;
+  private retryAttempts: number = 0; // Protección contra bucles infinitos
+  private readonly MAX_RETRY_ATTEMPTS: number = 1; // Solo permitir 1 reintento
   
   // Modal de confirmación de cancelación
   cancelModalOpen: boolean = false;
@@ -1243,7 +1245,20 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Embebir QR en PDF usando pdf-lib (método exacto y profesional)
    * Crea un nuevo PDF solo con la primera página para evitar páginas adicionales
    */
-  private async embedQrWithPdfLib(position: { x: number; y: number; width: number; height: number }): Promise<void> {
+  private async embedQrWithPdfLib(position: { x: number; y: number; width: number; height: number }, isRetry: boolean = false): Promise<void> {
+    // Protección contra bucles infinitos
+    if (isRetry && this.retryAttempts >= this.MAX_RETRY_ATTEMPTS) {
+      this.notificationService.showError('Error: Se alcanzó el límite de reintentos. Por favor, intenta con otro archivo PDF.');
+      this.saving = false;
+      this.retryAttempts = 0; // Reset para el próximo intento
+      return;
+    }
+    
+    if (isRetry) {
+      this.retryAttempts++;
+    } else {
+      this.retryAttempts = 0; // Reset si es el primer intento
+    }
     try {
       const { PDFDocument } = await import('pdf-lib');
 
@@ -1435,12 +1450,49 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       formData.append('width', position.width.toString());
       formData.append('height', position.height.toString());
 
-      this.http.put(`${environment.apiUrl}/embed-pdf`, formData).subscribe({
+      // Verificar que el archivo se haya creado correctamente
+      if (!pdfFile || pdfFile.size === 0) {
+        this.notificationService.showError('Error: El PDF generado está vacío. Usando método alternativo...');
+        this.savePositionBackend(position);
+        return;
+      }
+
+      if (!environment.production) {
+        console.log('Enviando PDF al backend:', {
+          qr_id: this.qrId,
+          file_size: pdfFile.size,
+          file_name: pdfFile.name,
+          file_type: pdfFile.type,
+          position: position
+        });
+      }
+
+      // IMPORTANTE: Verificar que el qr_id esté presente antes de enviar
+      if (!this.qrId) {
+        this.notificationService.showError('Error: No se encontró el ID del documento. Por favor, recarga la página.');
+        this.saving = false;
+        return;
+      }
+
+      // IMPORTANTE: Usar POST en lugar de PUT para FormData con archivos
+      // PUT no maneja bien FormData con archivos en Laravel
+      // Angular HttpClient automáticamente detecta FormData y establece el Content-Type correcto
+      this.http.post(`${environment.apiUrl}/embed-pdf`, formData).subscribe({
         next: (response: any) => {
           if (response.success) {
-            this.notificationService.showSuccess('QR embebido exitosamente usando Fabric.js + pdf-lib');
-            this.loadDocument(); // Recargar para mostrar el PDF final
+            this.notificationService.showSuccess('✅ QR embebido exitosamente');
+            // NO recargar el documento completo - solo actualizar las URLs
+            // Recargar causaría problemas si el PDF original fue eliminado
+            if (this.document) {
+              // Actualizar URLs con cache buster para forzar recarga
+              if (response.data?.final_pdf_url) {
+                this.document.final_pdf_url = response.data.final_pdf_url;
+              }
+              this.document.qr_position = position;
+              this.document.status = 'completed';
+            }
             this.saving = false;
+            this.retryAttempts = 0; // Reset en caso de éxito
           } else {
             this.notificationService.showError(response.message || 'Error al guardar PDF');
             this.saving = false;
@@ -1449,9 +1501,42 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
         error: (error: any) => {
           if (!environment.production) {
             console.error('Error al guardar PDF:', error);
+            console.error('Detalles del error:', {
+              status: error?.status,
+              statusText: error?.statusText,
+              message: error?.message,
+              error_message: error?.error?.message,
+              errors: error?.error?.errors,
+              error_data: error?.error
+            });
           }
-          this.notificationService.showError('Error al guardar PDF. Usando método alternativo...');
-          this.savePositionBackend(position);
+          
+          // Si es error 422, mostrar mensaje específico
+          if (error?.status === 422) {
+            const errorMsg = error?.error?.message || 'Error de validación';
+            const errors = error?.error?.errors;
+            let detailedMsg = errorMsg;
+            
+            if (errors) {
+              const firstError = Object.values(errors)[0];
+              if (Array.isArray(firstError) && firstError.length > 0) {
+                detailedMsg = firstError[0] as string;
+              }
+            }
+            
+            this.notificationService.showError(`Error de validación: ${detailedMsg}. Usando método alternativo...`);
+          } else {
+            this.notificationService.showError('Error al guardar PDF. Usando método alternativo...');
+          }
+          
+          // Intentar con método del backend (FPDI) solo si no hemos excedido los reintentos
+          if (this.retryAttempts < this.MAX_RETRY_ATTEMPTS) {
+            this.savePositionBackend(position);
+          } else {
+            this.notificationService.showError('Error: No se pudo procesar el PDF. Por favor, intenta con otro archivo.');
+            this.saving = false;
+            this.retryAttempts = 0; // Reset para el próximo intento
+          }
         }
       });
 
@@ -1546,17 +1631,26 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
                            (is500Error && errorMessage.length < 10);
         
         if (is500Error || isFpdiError) {
-          this.notificationService.showInfo('El PDF requiere procesamiento especial, usando método alternativo...');
-          this.embedQrWithPdfLib(position).catch((fallbackError) => {
-            if (!environment.production) {
-              console.error('Error también en método alternativo:', fallbackError);
-            }
-            this.notificationService.showError('Error al procesar el PDF. Por favor, intenta con otro archivo.');
+          // Solo intentar método alternativo si no hemos excedido los reintentos
+          if (this.retryAttempts < this.MAX_RETRY_ATTEMPTS) {
+            this.notificationService.showInfo('El PDF requiere procesamiento especial, usando método alternativo...');
+            this.embedQrWithPdfLib(position, true).catch((fallbackError) => {
+              if (!environment.production) {
+                console.error('Error también en método alternativo:', fallbackError);
+              }
+              this.notificationService.showError('Error al procesar el PDF. Por favor, intenta con otro archivo.');
+              this.saving = false;
+              this.retryAttempts = 0; // Reset para el próximo intento
+            });
+          } else {
+            this.notificationService.showError('Error: No se pudo procesar el PDF después de varios intentos. Por favor, intenta con otro archivo.');
             this.saving = false;
-          });
+            this.retryAttempts = 0; // Reset para el próximo intento
+          }
         } else {
           this.notificationService.showError('Error al embebir QR en el PDF: ' + (error?.error?.message || error?.message || 'Error desconocido'));
           this.saving = false;
+          this.retryAttempts = 0; // Reset para el próximo intento
         }
       }
     });
@@ -1693,25 +1787,42 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Descargar imagen QR
    * Usa fetch con blob para forzar la descarga
    */
-  downloadQrImage(): void {
-    if (!this.qrImageUrl) {
+  downloadQrImage(resolution: 'original' | 'hd' = 'original'): void {
+    if (!this.qrImageUrl || !this.qrId) {
       this.notificationService.showError('No hay imagen QR disponible');
       return;
     }
 
-    fetch(this.qrImageUrl)
-      .then(response => response.blob())
+    // Construir URL con parámetro de resolución
+    const baseUrl = this.qrImageUrl;
+    const url = new URL(baseUrl, window.location.origin);
+    url.searchParams.set('resolution', resolution);
+    url.searchParams.set('download', 'true');
+    
+    const filename = resolution === 'hd' 
+      ? `qr-${this.qrId}-1024x1024.png`
+      : `qr-${this.qrId}.png`;
+
+    fetch(url.toString())
+      .then(response => {
+        if (!response.ok) throw new Error('Error al descargar QR');
+        return response.blob();
+      })
       .then(blob => {
-        const url = window.URL.createObjectURL(blob);
+        const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = url;
-        link.download = `qr-${this.qrId}.png`;
+        link.href = downloadUrl;
+        link.download = filename;
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        this.notificationService.showSuccess('✅ QR descargado exitosamente');
+        window.URL.revokeObjectURL(downloadUrl);
+        this.notificationService.showSuccess(
+          resolution === 'hd' 
+            ? '✅ QR en alta resolución descargado exitosamente' 
+            : '✅ QR descargado exitosamente'
+        );
       })
       .catch(error => {
         if (!environment.production) {

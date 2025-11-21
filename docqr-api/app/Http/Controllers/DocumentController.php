@@ -274,13 +274,6 @@ class DocumentController extends Controller
                 ], 400);
             }
             
-            $request->validate([
-                'folder_name' => ['required', 'string', 'max:100', 'regex:/^(CE|IN|SU)-[A-Za-z0-9ÑñÁÉÍÓÚáéíóúÜü\-]+$/u']
-            ], [
-                'folder_name.required' => 'El nombre de carpeta es obligatorio',
-                'folder_name.regex' => 'El formato debe ser: TIPO-CODIGO (ej: CE-12345, IN-ABC, SU-XYZ). Solo se permiten tipos: CE, IN, SU. Se permiten caracteres en español (Ñ, ñ, acentos).'
-            ]);
-
             $document = QrFile::where('qr_id', $qrId)->first();
             
             if (!$document) {
@@ -289,6 +282,20 @@ class DocumentController extends Controller
                     'message' => 'Documento no encontrado'
                 ], 404);
             }
+            
+            $request->validate([
+                'folder_name' => [
+                    'required', 
+                    'string', 
+                    'max:100', 
+                    'regex:/^(CE|IN|SU)-[A-Za-z0-9ÑñÁÉÍÓÚáéíóúÜü\-]+$/u',
+                    'unique:qr_files,folder_name,' . $document->id
+                ]
+            ], [
+                'folder_name.required' => 'El nombre de carpeta es obligatorio',
+                'folder_name.regex' => 'El formato debe ser: TIPO-CODIGO (ej: CE-12345, IN-ABC, SU-XYZ). Solo se permiten tipos: CE, IN, SU. Se permiten caracteres en español (Ñ, ñ, acentos).',
+                'folder_name.unique' => 'Este código ya existe en el sistema. Por favor elige otro nombre único.'
+            ]);
             
             $oldFolderName = $document->folder_name;
             $document->folder_name = $request->folder_name;
@@ -590,6 +597,39 @@ class DocumentController extends Controller
     }
 
     /**
+     * Verificar si un código (folder_name) ya existe
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function checkCodeExists(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'folder_name' => 'required|string|max:100',
+            ]);
+
+            $folderName = $request->input('folder_name');
+            $exists = QrFile::withoutTrashed()->where('folder_name', $folderName)->exists();
+
+            return response()->json([
+                'success' => true,
+                'exists' => $exists,
+                'message' => $exists 
+                    ? 'Este código ya existe en el sistema' 
+                    : 'Código disponible'
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error al verificar código: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al verificar el código'
+            ], 500);
+        }
+    }
+
+    /**
      * Crear documento y generar QR sin PDF (para flujo "Adjuntar")
      * 
      * @param Request $request
@@ -599,7 +639,7 @@ class DocumentController extends Controller
     {
         try {
             $request->validate([
-                'folder_name' => 'required|string|max:100',
+                'folder_name' => 'required|string|max:100|unique:qr_files,folder_name',
             ]);
 
             $folderName = $request->input('folder_name');

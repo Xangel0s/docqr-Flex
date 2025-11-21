@@ -216,6 +216,23 @@ export class DocqrService {
 
 
   /**
+   * Verificar si un código (folder_name) ya existe
+   */
+  checkCodeExists(folderName: string): Observable<{
+    success: boolean;
+    exists: boolean;
+    message: string;
+  }> {
+    return this.http.get<{
+      success: boolean;
+      exists: boolean;
+      message: string;
+    }>(`${this.apiUrl}/documents/check-code`, {
+      params: { folder_name: folderName }
+    });
+  }
+
+  /**
    * Crear documento y generar QR sin PDF (para flujo "Adjuntar")
    */
   createDocumentWithoutPdf(folderName: string): Observable<{

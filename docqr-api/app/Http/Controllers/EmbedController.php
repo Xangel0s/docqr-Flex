@@ -216,19 +216,39 @@ class EmbedController extends Controller
     public function embedPdf(Request $request): JsonResponse
     {
         try {
+            // Log detallado de lo que se recibe (antes de validar)
+            Log::info('embedPdf recibido:', [
+                'method' => $request->method(),
+                'content_type' => $request->header('Content-Type'),
+                'has_file_pdf' => $request->hasFile('pdf'),
+                'qr_id_input' => $request->input('qr_id'),
+                'qr_id_all' => $request->all('qr_id'),
+                'all_inputs_keys' => array_keys($request->all()),
+                'all_inputs' => $request->except(['pdf']), // No loguear el PDF completo
+                'x' => $request->input('x'),
+                'y' => $request->input('y'),
+                'width' => $request->input('width'),
+                'height' => $request->input('height'),
+            ]);
+
             $validator = Validator::make($request->all(), [
                 'qr_id' => 'required|string|max:255',
-                'pdf' => 'required|file|mimes:pdf|max:512000', // Máximo 500MB para procesar PDF con QR
+                'pdf' => 'required|file|mimes:pdf,application/pdf,application/x-pdf|max:512000', // Máximo 500MB
                 'x' => 'required|numeric|min:0',
                 'y' => 'required|numeric|min:0',
                 'width' => 'required|numeric|min:50|max:300',
                 'height' => 'required|numeric|min:50|max:300',
             ], [
+                'qr_id.required' => 'El ID del QR es requerido',
                 'pdf.required' => 'El archivo PDF es requerido',
                 'pdf.file' => 'El PDF debe ser un archivo válido',
-                'pdf.mimes' => 'El archivo debe ser un PDF',
+                'pdf.mimes' => 'El archivo debe ser un PDF válido',
                 'pdf.max' => 'El archivo PDF no puede exceder 500MB. Tamaño actual: ' . 
                     ($request->hasFile('pdf') ? round($request->file('pdf')->getSize() / 1024 / 1024, 2) . 'MB' : 'N/A'),
+                'x.required' => 'La coordenada X es requerida',
+                'y.required' => 'La coordenada Y es requerida',
+                'width.required' => 'El ancho es requerido',
+                'height.required' => 'El alto es requerido',
             ]);
 
             if ($validator->fails()) {
@@ -237,7 +257,9 @@ class EmbedController extends Controller
                     'has_file' => $request->hasFile('pdf'),
                     'file_size' => $request->hasFile('pdf') ? $request->file('pdf')->getSize() : null,
                     'errors' => $validator->errors()->toArray(),
-                    'all_keys' => array_keys($request->all())
+                    'all_keys' => array_keys($request->all()),
+                    'qr_id_received' => $request->input('qr_id'),
+                    'content_type' => $request->header('Content-Type'),
                 ]);
                 return response()->json([
                     'success' => false,
@@ -276,15 +298,47 @@ class EmbedController extends Controller
             // El frontend envía un Blob como archivo en FormData
             $pdfFile = $request->file('pdf');
             
-            if (!$pdfFile || !$pdfFile->isValid()) {
-                Log::error('Archivo PDF no válido o no recibido:', [
+            if (!$pdfFile) {
+                Log::error('Archivo PDF no recibido en embedPdf:', [
                     'has_file' => $request->hasFile('pdf'),
-                    'file_valid' => $pdfFile ? $pdfFile->isValid() : false,
+                    'all_inputs' => array_keys($request->all()),
+                    'content_type' => $request->header('Content-Type'),
+                    'content_length' => $request->header('Content-Length')
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El archivo PDF no se recibió correctamente. Verifica que el archivo se esté enviando en el FormData.'
+                ], 422);
+            }
+            
+            if (!$pdfFile->isValid()) {
+                Log::error('Archivo PDF no válido en embedPdf:', [
+                    'has_file' => $request->hasFile('pdf'),
+                    'file_valid' => $pdfFile->isValid(),
+                    'file_size' => $pdfFile->getSize(),
+                    'file_mime' => $pdfFile->getMimeType(),
+                    'file_error' => $pdfFile->getError(),
                     'all_inputs' => array_keys($request->all())
                 ]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'El archivo PDF no se recibió correctamente'
+                    'message' => 'El archivo PDF no es válido. Error: ' . $pdfFile->getErrorMessage()
+                ], 422);
+            }
+            
+            // Verificar tamaño del archivo
+            $fileSize = $pdfFile->getSize();
+            $maxSize = 512000 * 1024; // 500MB en KB
+            if ($fileSize > $maxSize) {
+                Log::error('PDF excede tamaño máximo:', [
+                    'qr_id' => $qrId,
+                    'file_size' => $fileSize,
+                    'max_size' => $maxSize,
+                    'size_mb' => round($fileSize / 1024 / 1024, 2)
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El archivo PDF excede el tamaño máximo de 500MB. Tamaño actual: ' . round($fileSize / 1024 / 1024, 2) . 'MB'
                 ], 422);
             }
             
@@ -298,78 +352,77 @@ class EmbedController extends Controller
             $finalFileName = $qrFile->original_filename;
             $finalPath = "final/{$finalFolder}/{$finalFileName}";
 
-            // PROCESAR PDF: Garantizar que solo tenga 1 página
-            // Aunque el frontend debería enviar solo 1 página, procesamos el PDF para asegurarlo
+            // El frontend ya procesa el PDF con pdf-lib y envía solo la primera página con el QR embebido
+            // Por lo tanto, podemos usar el PDF directamente sin reprocesarlo
+            // Solo verificamos que sea válido y tenga contenido
             $pdfContent = file_get_contents($pdfFile->getRealPath());
             
             try {
-                $pdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-                // Intentar abrir el PDF (si está protegido con contraseña, fallará aquí)
-                try {
-                    $pageCount = $pdf->setSourceFile($pdfFile->getRealPath());
-                } catch (\setasign\Fpdi\PdfParser\CrossReference\CrossReferenceException $e) {
-                    $errorMsg = $e->getMessage();
-                    if (stripos($errorMsg, 'password') !== false || 
-                        stripos($errorMsg, 'encrypted') !== false) {
-                        Log::error('PDF protegido con contraseña recibido desde frontend:', [
-                            'qr_id' => $qrId,
-                            'error' => $errorMsg
-                        ]);
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'El PDF está protegido con contraseña. Por favor, desbloquee el PDF antes de subirlo.',
-                            'error_type' => 'password_protected'
-                        ], 422);
-                    }
-                    throw $e;
+                // Verificar que el PDF tenga contenido válido
+                if (strlen($pdfContent) < 100) {
+                    throw new \Exception('El PDF recibido está vacío o es inválido');
                 }
                 
-                
-                if ($pageCount > 1) {
-                    
-                    // Crear un nuevo PDF con solo la primera página
-                    $newPdf = new \setasign\Fpdi\Tcpdf\Fpdi();
-                    $newPdf->setSourceFile($pdfFile->getRealPath());
-                    
-                    // Importar solo la primera página
-                    $tplId = $newPdf->importPage(1);
-                    $size = $newPdf->getTemplateSize($tplId);
-                    
-                    // Agregar página con las dimensiones correctas
-                    $newPdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
-                    $newPdf->useTemplate($tplId, 0, 0, $size['width'], $size['height'], true);
-                    
-                    // Obtener el contenido del nuevo PDF (solo con 1 página)
-                    $pdfContent = $newPdf->Output('', 'S'); // 'S' = string output
-                    
+                // Verificar header PDF
+                if (substr($pdfContent, 0, 4) !== '%PDF') {
+                    throw new \Exception('El archivo recibido no es un PDF válido');
                 }
+                
+                // El PDF ya viene procesado por el frontend (pdf-lib)
+                // No necesitamos reprocesarlo con FPDI, solo validar que sea un PDF válido
+                // Si el frontend lo procesó correctamente, debería tener solo 1 página
+                Log::info('PDF procesado por frontend recibido, guardando directamente:', [
+                    'qr_id' => $qrId,
+                    'file_size' => strlen($pdfContent),
+                    'original_filename' => $qrFile->original_filename
+                ]);
+                
             } catch (\Exception $e) {
-                Log::error('Error al procesar PDF recibido, se usará el PDF original:', [
+                Log::error('Error al validar PDF recibido:', [
                     'qr_id' => $qrId,
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
-                // Continuamos con el PDF original
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al validar el PDF: ' . $e->getMessage(),
+                    'error_type' => 'pdf_validation_error'
+                ], 422);
             }
 
-            // Guardar el PDF (ya procesado para tener solo 1 página) en storage
+            // Guardar el PDF procesado por el frontend directamente
+            // El frontend ya garantiza que tiene solo 1 página con el QR embebido
             Storage::disk('final')->put($finalPath, $pdfContent);
             
-            // Verificar que el PDF guardado tenga solo 1 página
+            // Verificación opcional: Intentar verificar con FPDI (puede fallar si tiene compresión no soportada)
+            // Si falla, no es crítico porque el PDF ya viene procesado correctamente por el frontend
             try {
                 $verifyPdf = new \setasign\Fpdi\Tcpdf\Fpdi();
                 $verifyPath = Storage::disk('final')->path($finalPath);
                 $verifyPageCount = $verifyPdf->setSourceFile($verifyPath);
                 
                 if ($verifyPageCount > 1) {
-                    Log::error('ERROR CRÍTICO: PDF guardado tiene más de 1 página después del procesamiento', [
+                    Log::warning('PDF guardado tiene más de 1 página (verificación FPDI):', [
+                        'qr_id' => $qrId,
+                        'page_count' => $verifyPageCount,
+                        'final_path' => $finalPath,
+                        'note' => 'El PDF fue procesado por el frontend, puede ser un falso positivo de FPDI'
+                    ]);
+                } else {
+                    Log::info('PDF guardado correctamente (verificación FPDI):', [
                         'qr_id' => $qrId,
                         'page_count' => $verifyPageCount,
                         'final_path' => $finalPath
                     ]);
                 }
             } catch (\Exception $e) {
-                // No crítico si no se puede verificar
+                // No crítico: El PDF ya viene procesado por el frontend
+                // Si FPDI no puede leerlo (compresión no soportada), no importa
+                // porque el frontend ya lo procesó correctamente con pdf-lib
+                Log::info('No se pudo verificar PDF con FPDI (no crítico, PDF ya procesado por frontend):', [
+                    'qr_id' => $qrId,
+                    'error' => $e->getMessage()
+                ]);
             }
 
             // Preparar posición
@@ -414,13 +467,16 @@ class EmbedController extends Controller
             
             CacheHelper::invalidateDocumentsCache();
 
-            if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
-                try {
-                    Storage::disk('local')->delete($qrFile->file_path);
-                } catch (\Exception $e) {
-                    // No crítico si no se puede eliminar
-                }
-            }
+            // IMPORTANTE: NO eliminar el PDF original después de guardar
+            // El editor necesita el PDF original para seguir editando
+            // Solo se eliminará cuando el documento sea eliminado completamente
+            // if ($qrFile->file_path && Storage::disk('local')->exists($qrFile->file_path)) {
+            //     try {
+            //         Storage::disk('local')->delete($qrFile->file_path);
+            //     } catch (\Exception $e) {
+            //         // No crítico si no se puede eliminar
+            //     }
+            // }
 
             $finalUrl = \App\Helpers\UrlHelper::url("/api/files/pdf/{$qrFile->qr_id}", $request);
 

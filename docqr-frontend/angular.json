@@ -35,7 +35,11 @@
             "styles": [
               "src/styles.scss"
             ],
-            "scripts": []
+            "scripts": [],
+            "allowedCommonJsDependencies": [
+              "pako",
+              "pdfjs-dist"
+            ]
           },
           "configurations": {
             "production": {
@@ -86,6 +90,9 @@
         }
       }
     }
+  },
+  "cli": {
+    "analytics": false
   }
 }
 
