@@ -1,0 +1,22 @@
+# Forzar PHP 8.2 en todo el directorio
+# Este archivo va en la RAÍZ del proyecto (no en public/)
+<IfModule mime_module>
+  AddHandler application/x-httpd-ea-php82 .php .php8 .phtml
+</IfModule>
+
+# Bloquear acceso directo a archivos sensibles
+<Files ".env">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "composer.json">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "composer.lock">
+    Order allow,deny
+    Deny from all
+</Files>
+

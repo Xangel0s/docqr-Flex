@@ -28,6 +28,9 @@ class SecurityHeaders
         $response = $next($request);
 
         if (config('app.env') === 'production') {
+            // X-Frame-Options se maneja con CSP frame-ancestors (más flexible)
+            // Permitir iframes desde el frontend
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://docqr.geofal.com.pe'));
             $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
             $response->headers->set('X-Content-Type-Options', 'nosniff');
             $response->headers->set('X-XSS-Protection', '1; mode=block');
@@ -41,19 +44,23 @@ class SecurityHeaders
 
             $response->headers->set('Referrer-Policy', 'no-referrer-when-downgrade');
 
+            // Permissions-Policy: Permitir fullscreen para el visor de PDF
             $response->headers->set(
                 'Permissions-Policy',
-                'geolocation=(), microphone=(), camera=(), payment=()'
+                'geolocation=(), microphone=(), camera=(), payment=(), fullscreen=(self "' . $frontendUrl . '")'
             );
             $appUrl = config('app.url');
+            $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', 'https://docqr.geofal.com.pe'));
+            
             $csp = [
                 "default-src 'self'",
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
                 "font-src 'self' https://fonts.gstatic.com data:",
-                "img-src 'self' data: https:",
-                "connect-src 'self' " . $appUrl,
-                "frame-ancestors 'self'",
+                "img-src 'self' data: https: blob:",
+                "connect-src 'self' " . $appUrl . " " . $frontendUrl,
+                "frame-ancestors 'self' " . $frontendUrl . " https://docqr.geofal.com.pe https://www.docqr.geofal.com.pe",
+                "frame-src 'self' " . $frontendUrl . " https://docqr.geofal.com.pe blob:",
                 "base-uri 'self'",
                 "form-action 'self'",
             ];

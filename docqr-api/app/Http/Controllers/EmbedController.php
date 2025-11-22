@@ -158,10 +158,13 @@ class EmbedController extends Controller
 
             // Actualizar registro PRIMERO (antes de eliminar archivos)
             // Usar transacción para asegurar consistencia
-            DB::transaction(function () use ($qrFile, $finalPath, $position) {
+            // Incluir page_number en la posición guardada
+            $positionWithPage = array_merge($position, ['page_number' => $pageNumber]);
+            
+            DB::transaction(function () use ($qrFile, $finalPath, $positionWithPage) {
                 $qrFile->update([
                     'final_path' => $finalPath,
-                    'qr_position' => $position,
+                    'qr_position' => $positionWithPage,
                     'status' => 'completed',
                 ]);
             });

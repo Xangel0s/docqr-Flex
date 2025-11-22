@@ -62,6 +62,13 @@ class UrlHelper
         
         // Para rutas de API, siempre usar el host del backend
         if ($isApiRoute) {
+            // En producción, usar APP_URL directamente (más confiable)
+            if (env('APP_ENV') === 'production') {
+                $appUrl = rtrim(config('app.url', env('APP_URL', 'https://docqr-api.geofal.com.pe')), '/');
+                $path = '/' . ltrim($path, '/');
+                return $appUrl . $path;
+            }
+            
             if ($useLocalhost && in_array(env('APP_ENV', 'production'), ['local', 'development'])) {
                 $host = 'localhost:8000';
                 $protocol = 'http';
@@ -71,17 +78,11 @@ class UrlHelper
                 if (!$host) {
                     $host = $request->getHost();
                 }
+                // Limpiar puerto si existe
                 $host = preg_replace('/:\d+$/', '', $host);
                 
-                // Si estamos en desarrollo local, asegurar que use el puerto correcto
-                if (env('APP_ENV') === 'local' && ($host === 'localhost' || strpos($host, '127.0.0.1') !== false)) {
-                    $port = $request->getPort();
-                    if ($port && $port != 80 && $port != 443) {
-                        $host .= ':' . $port;
-                    } elseif (!$port || $port == 80) {
-                        $host .= ':8000';
-                    }
-                } else {
+                // En producción, no agregar puerto
+                if (env('APP_ENV') !== 'production') {
                     $port = $request->getPort();
                     if ($port && $port != 80 && $port != 443 && strpos($host, ':') === false) {
                         $host .= ':' . $port;

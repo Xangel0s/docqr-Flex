@@ -38,7 +38,7 @@ class HandleCorsOptions
             return response('', 204)
                 ->header('Access-Control-Allow-Origin', $allowedOrigin)
                 ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, Origin')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, X-CSRF-TOKEN, Origin, Cache-Control')
                 ->header('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag')
                 ->header('Access-Control-Max-Age', '86400')
                 ->header('Access-Control-Allow-Credentials', 'true');
@@ -53,20 +53,20 @@ class HandleCorsOptions
             $corsOrigin = $isOriginAllowed && $origin ? $origin : 'http://localhost:4200';
             $response->headers->set('Access-Control-Allow-Origin', $corsOrigin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, Origin');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, X-CSRF-TOKEN, Origin, Cache-Control');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
             $response->headers->set('Access-Control-Allow-Credentials', 'true');
         } elseif ($isOriginAllowed && $origin) {
             // En producción, solo si el origen está permitido
             $response->headers->set('Access-Control-Allow-Origin', $origin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, Origin');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, X-CSRF-TOKEN, Origin, Cache-Control');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
             $response->headers->set('Access-Control-Allow-Credentials', 'true');
         } elseif (in_array('*', $allowedOrigins)) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, Origin');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Requested-With, X-Frontend-Origin, X-CSRF-TOKEN, Origin, Cache-Control');
             $response->headers->set('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Disposition, ETag');
         }
 

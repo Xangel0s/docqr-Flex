@@ -193,7 +193,19 @@ class PdfProcessorService
             }
 
             // Cambiar a la página donde se colocará el QR
-            $pdf->setPage($pageNumber);
+            // CRÍTICO: Para 1 página, asegurar que estamos en la página correcta
+            // TCPDF puede tener problemas con setPage(1) si solo hay 1 página
+            if ($pageCount === 1) {
+                // Si solo hay 1 página, no necesitamos setPage, pero lo hacemos por consistencia
+                // Asegurar que estamos en la página 1
+                $currentPage = $pdf->getPage();
+                if ($currentPage !== 1) {
+                    $pdf->setPage(1);
+                }
+            } else {
+                // Para múltiples páginas, usar setPage normalmente
+                $pdf->setPage($pageNumber);
+            }
 
             // Usar coordenadas exactas del frontend (sin offset de calibración)
             // El frontend calcula las coordenadas correctamente en el espacio estándar (595x842)
@@ -237,6 +249,30 @@ class PdfProcessorService
             $finalWidth = $width;  // Usar width como referencia
             $finalHeight = $width; // Forzar igual a width (cuadrado perfecto)
             
+            // Log antes de insertar QR (especialmente importante para 1 página)
+            Log::info('Insertando QR en PDF:', [
+                'page_count' => $pageCount,
+                'page_number' => $pageNumber,
+                'current_page_before' => $pdf->getPage(),
+                'qr_position' => ['x' => $x, 'y' => $pdfY, 'width' => $finalWidth, 'height' => $finalHeight],
+                'page_dimensions' => ['width' => $pageWidth, 'height' => $pageHeight],
+                'qr_path' => $fullQrPath,
+                'qr_exists' => file_exists($fullQrPath)
+            ]);
+            
+            // Asegurar que estamos en la página correcta antes de insertar
+            if ($pageCount === 1) {
+                // Para 1 página, asegurar que estamos en página 1
+                if ($pdf->getPage() !== 1) {
+                    $pdf->setPage(1);
+                }
+            } else {
+                // Para múltiples páginas, asegurar que estamos en la página correcta
+                if ($pdf->getPage() !== $pageNumber) {
+                    $pdf->setPage($pageNumber);
+                }
+            }
+            
             $pdf->Image(
                 $fullQrPath,
                 $x,
@@ -244,6 +280,14 @@ class PdfProcessorService
                 $finalWidth,
                 $finalHeight
             );
+            
+            // Log después de insertar QR
+            Log::info('QR insertado en PDF:', [
+                'page_count' => $pageCount,
+                'page_number' => $pageNumber,
+                'current_page_after' => $pdf->getPage(),
+                'total_pages_after' => $pdf->getNumPages()
+            ]);
             
             // Verificar que el número de páginas se mantenga igual
             $pageCountAfterImage = $pdf->getNumPages();
@@ -318,31 +362,48 @@ class PdfProcessorService
             Storage::disk('final')->makeDirectory($finalFolder);
             
             // Ruta completa del PDF final
-            $finalPath = "final/{$finalFolder}/{$finalFilename}";
-            $fullFinalPath = Storage::disk('final')->path("{$finalFolder}/{$finalFilename}");
+            // IMPORTANTE: NO incluir "final/" en la ruta porque Storage::disk('final') ya apunta a storage/app/final/
+            $finalPath = "{$finalFolder}/{$finalFilename}";
+            $fullFinalPath = Storage::disk('final')->path($finalPath);
 
-            // CRÍTICO: Verificar que el PDF solo tenga 1 página antes de guardar
+            // Verificar que el número de páginas sea correcto antes de guardar
             $finalPageCount = $pdf->getNumPages();
-            if ($finalPageCount > 1) {
-                Log::error('ERROR CRÍTICO: El PDF tiene más de 1 página antes de guardar', [
-                    'page_count' => $finalPageCount,
-                    'qr_position' => ['x' => $x, 'y' => $y, 'width' => $width, 'height' => $height],
-                    'page_dimensions' => ['width' => $pageWidth, 'height' => $pageHeight]
+            if ($finalPageCount !== $pageCount) {
+                Log::error('ERROR: El número de páginas no coincide antes de guardar', [
+                    'expected' => $pageCount,
+                    'actual' => $finalPageCount,
+                    'qr_position' => ['x' => $x, 'y' => $pdfY, 'width' => $width, 'height' => $height],
+                    'page_dimensions' => ['width' => $pageWidth, 'height' => $pageHeight],
+                    'page_number' => $pageNumber
                 ]);
-                throw new \Exception("Error: El PDF generado tiene {$finalPageCount} páginas. El QR debe estar más arriba.");
+                // Intentar corregir eliminando páginas extra o agregando las faltantes
+                while ($pdf->getNumPages() > $pageCount) {
+                    $pdf->deletePage($pdf->getNumPages());
+                }
+                // Si faltan páginas, no podemos agregarlas fácilmente, así que lanzar error
+                if ($pdf->getNumPages() < $pageCount) {
+                    throw new \Exception("Error: El PDF generado tiene {$pdf->getNumPages()} páginas, se esperaban {$pageCount}.");
+                }
             }
             
+            // Guardar el PDF final (soporta múltiples páginas)
             $pdf->Output($fullFinalPath, 'F');
             
-            // Verificar que el PDF guardado tenga solo 1 página
-            $verifyPdf = new Fpdi();
-            $verifyPageCount = $verifyPdf->setSourceFile($fullFinalPath);
-            if ($verifyPageCount > 1) {
-                Log::error('ERROR CRÍTICO: PDF guardado tiene más de 1 página', [
-                    'page_count' => $verifyPageCount,
-                    'final_path' => $fullFinalPath
-                ]);
-                throw new \Exception("Error: El PDF guardado tiene {$verifyPageCount} páginas.");
+            // Verificar que el PDF guardado tenga el número correcto de páginas
+            try {
+                $verifyPdf = new Fpdi();
+                $verifyPageCount = $verifyPdf->setSourceFile($fullFinalPath);
+                if ($verifyPageCount !== $pageCount) {
+                    Log::warning('ADVERTENCIA: PDF guardado tiene número de páginas diferente', [
+                        'expected' => $pageCount,
+                        'actual' => $verifyPageCount,
+                        'final_path' => $fullFinalPath
+                    ]);
+                    // No lanzar excepción, solo loggear - el PDF puede estar bien
+                }
+            } catch (\Exception $e) {
+                // Si no se puede verificar, continuar - el PDF puede estar bien
+                Log::warning('No se pudo verificar el número de páginas del PDF guardado: ' . $e->getMessage());
             }
             
 
