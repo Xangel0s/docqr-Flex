@@ -1,0 +1,137 @@
+# =====================================================
+# Configuración para forzar versión de PHP en Terminal/CLI
+# Para uso en cPanel
+# =====================================================
+# Este archivo debe colocarse en la RAÍZ del directorio docqr-api
+# (NO en public/, sino en docqr-api/)
+# =====================================================
+# Esto permite ejecutar comandos de Composer, Artisan, etc.
+# con la versión correcta de PHP desde SSH/Terminal
+# =====================================================
+
+# Forzar PHP 8.1 o superior para comandos de terminal
+# Ajustar según la versión disponible en tu servidor cPanel
+
+<IfModule mod_mime.c>
+    AddHandler application/x-httpd-php81 .php
+    AddHandler application/x-httpd-php81-cgi .php
+</IfModule>
+
+# Alternativa: Si tu cPanel usa ea-php
+<IfModule mod_lsapi.c>
+    lsapi_backend_use_own_log On
+</IfModule>
+
+# =====================================================
+# INSTRUCCIONES DE USO EN CPANEL/SSH:
+# =====================================================
+
+# Opción 1: Usar PATH específico al ejecutar comandos
+# ----------------------------------------------------
+# En lugar de: php artisan migrate
+# Usar:        /opt/cpanel/ea-php81/root/usr/bin/php artisan migrate
+#
+# O crear alias en ~/.bashrc:
+# alias php81='/opt/cpanel/ea-php81/root/usr/bin/php'
+# Entonces: php81 artisan migrate
+
+# Opción 2: Cambiar versión de PHP por defecto en cPanel
+# -------------------------------------------------------
+# 1. Ir a cPanel → "Select PHP Version" o "MultiPHP Manager"
+# 2. Seleccionar el dominio (docqr-api.geofal.com.pe)
+# 3. Elegir PHP 8.1 o superior
+# 4. Aplicar cambios
+
+# Opción 3: Usar script wrapper (RECOMENDADO)
+# --------------------------------------------
+# Crear archivo: docqr-api/php81 (sin extensión)
+# Contenido:
+# #!/bin/bash
+# /opt/cpanel/ea-php81/root/usr/bin/php "$@"
+#
+# Dar permisos: chmod +x php81
+# Usar: ./php81 artisan migrate
+
+# =====================================================
+# RUTAS COMUNES DE PHP EN CPANEL:
+# =====================================================
+# PHP 8.1: /opt/cpanel/ea-php81/root/usr/bin/php
+# PHP 8.0: /opt/cpanel/ea-php80/root/usr/bin/php
+# PHP 7.4: /opt/cpanel/ea-php74/root/usr/bin/php
+#
+# Verificar versiones disponibles:
+# ls -la /opt/cpanel/ | grep ea-php
+
+# =====================================================
+# COMANDOS ÚTILES CON LA VERSIÓN CORRECTA:
+# =====================================================
+
+# Verificar versión de PHP
+# /opt/cpanel/ea-php81/root/usr/bin/php -v
+
+# Composer install
+# /opt/cpanel/ea-php81/root/usr/bin/php /usr/local/bin/composer install --no-dev --optimize-autoloader
+
+# Artisan migrate
+# /opt/cpanel/ea-php81/root/usr/bin/php artisan migrate --force
+
+# Artisan key:generate
+# /opt/cpanel/ea-php81/root/usr/bin/php artisan key:generate
+
+# Artisan config:cache
+# /opt/cpanel/ea-php81/root/usr/bin/php artisan config:cache
+
+# Crear usuario admin
+# /opt/cpanel/ea-php81/root/usr/bin/php database/scripts/crear_usuario_admin.php
+
+# =====================================================
+# SCRIPT AUTOMATIZADO PARA CONFIGURAR TODO:
+# =====================================================
+# Guarda esto como: setup-production.sh
+# chmod +x setup-production.sh
+# ./setup-production.sh
+
+# #!/bin/bash
+# PHP=/opt/cpanel/ea-php81/root/usr/bin/php
+# COMPOSER=/usr/local/bin/composer
+# 
+# echo "Instalando dependencias..."
+# $PHP $COMPOSER install --no-dev --optimize-autoloader
+# 
+# echo "Generando key..."
+# $PHP artisan key:generate
+# 
+# echo "Ejecutando migraciones..."
+# $PHP artisan migrate --force
+# 
+# echo "Optimizando..."
+# $PHP artisan config:cache
+# $PHP artisan route:cache
+# $PHP artisan view:cache
+# $PHP artisan optimize
+# 
+# echo "Configurando permisos..."
+# chmod -R 775 storage bootstrap/cache
+# 
+# echo "Creando usuario admin..."
+# $PHP database/scripts/crear_usuario_admin.php
+# 
+# echo "¡Listo!"
+
+# =====================================================
+# ALTERNATIVA: Variable de entorno
+# =====================================================
+# Agregar a ~/.bashrc o ~/.bash_profile:
+# export PATH="/opt/cpanel/ea-php81/root/usr/bin:$PATH"
+# Luego: source ~/.bashrc
+# Y podrás usar simplemente: php artisan migrate
+
+# =====================================================
+# NOTAS IMPORTANTES:
+# =====================================================
+# 1. Este archivo NO afecta a las peticiones HTTP (usa public/.htaccess)
+# 2. Solo afecta a comandos ejecutados desde terminal/SSH
+# 3. Algunos proveedores usan rutas diferentes, verificar con:
+#    find /opt -name "php" -type f 2>/dev/null | grep bin
+# 4. Si no tienes acceso SSH, contacta a soporte del hosting
+

@@ -1,0 +1,138 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar 
+    [isOpen]="sidebarOpen"
+    (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 overflow-y-auto p-6">
+      <div class="max-w-7xl mx-auto">
+        <!-- Título -->
+        <div class="mb-6">
+          <h1 class="text-3xl font-bold text-gray-900 mb-2">Gestión de Compresión</h1>
+          <p class="text-gray-600">Comprime y exporta documentos antiguos por mes y tipo</p>
+        </div>
+
+        <!-- Filtros -->
+        <div class="bg-white rounded-xl shadow-sm p-4 mb-6">
+          <div class="flex flex-col md:flex-row gap-4 items-end">
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Documentos de hace más de (meses)
+              </label>
+              <input 
+                type="number"
+                [(ngModel)]="monthsBack"
+                (change)="loadGroups()"
+                min="1"
+                max="24"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-primary/50 focus:border-primary">
+            </div>
+            <button 
+              type="button"
+              (click)="loadGroups()"
+              [disabled]="loading"
+              class="btn-primary">
+              <span class="material-symbols-outlined mr-2">refresh</span>
+              Actualizar
+            </button>
+          </div>
+        </div>
+
+        <!-- Acciones masivas -->
+        <div *ngIf="groups.length > 0" class="bg-white rounded-xl shadow-sm p-4 mb-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-600">
+                <span class="font-semibold">{{ selectedGroups.size }}</span> grupo(s) seleccionado(s)
+              </p>
+            </div>
+            <button 
+              type="button"
+              (click)="compressSelected()"
+              [disabled]="selectedGroups.size === 0 || loading"
+              class="btn-primary">
+              <span class="material-symbols-outlined mr-2">archive</span>
+              Comprimir Seleccionados
+            </button>
+          </div>
+        </div>
+
+        <!-- Lista de grupos -->
+        <div *ngIf="loading" class="text-center py-12 text-gray-500">
+          <span class="material-symbols-outlined text-4xl mb-2 animate-spin">sync</span>
+          <p>Cargando grupos...</p>
+        </div>
+
+        <div *ngIf="!loading && groups.length === 0" class="bg-white rounded-xl shadow-sm p-12 text-center">
+          <span class="material-symbols-outlined text-6xl text-gray-300 mb-4">check_circle</span>
+          <p class="text-gray-600 text-lg">No hay documentos pendientes de compresión</p>
+          <p class="text-gray-500 text-sm mt-2">El sistema está optimizado</p>
+        </div>
+
+        <div *ngIf="!loading && groups.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div 
+            *ngFor="let group of groups"
+            class="bg-white rounded-xl shadow-sm border-2 transition-all cursor-pointer"
+            [class.border-primary]="isGroupSelected(group.type, group.month)"
+            [class.border-gray-200]="!isGroupSelected(group.type, group.month)"
+            (click)="toggleGroup(group.type, group.month)">
+            
+            <div class="p-4">
+              <!-- Checkbox y header -->
+              <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <input 
+                    type="checkbox"
+                    [checked]="isGroupSelected(group.type, group.month)"
+                    (click)="$event.stopPropagation(); toggleGroup(group.type, group.month)"
+                    class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                  <div>
+                    <h3 class="font-semibold text-gray-900">{{ getTypeLabel(group.type) }}</h3>
+                    <p class="text-sm text-gray-600">{{ group.month_formatted }}</p>
+                  </div>
+                </div>
+                <span class="px-2 py-1 bg-primary bg-opacity-10 text-primary text-xs font-semibold rounded">
+                  {{ group.type }}
+                </span>
+              </div>
+
+              <!-- Estadísticas -->
+              <div class="grid grid-cols-2 gap-2 mb-3 text-sm">
+                <div>
+                  <p class="text-gray-500">Documentos</p>
+                  <p class="font-semibold text-gray-900">{{ group.count }}</p>
+                </div>
+                <div>
+                  <p class="text-gray-500">Tamaño</p>
+                  <p class="font-semibold text-gray-900">{{ group.total_size_mb.toFixed(2) }} MB</p>
+                </div>
+              </div>
+
+              <!-- Acciones -->
+              <div class="flex gap-2 pt-3 border-t border-gray-200" (click)="$event.stopPropagation()">
+                <button 
+                  type="button"
+                  (click)="compressGroup(group.type, group.month)"
+                  [disabled]="loading"
+                  class="flex-1 btn-primary text-sm py-2">
+                  <span class="material-symbols-outlined text-base mr-1">archive</span>
+                  Comprimir
+                </button>
+                <button 
+                  type="button"
+                  (click)="downloadZip(group.type, group.month)"
+                  class="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
+                  <span class="material-symbols-outlined text-base">download</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
