@@ -1,0 +1,31 @@
+/* Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos globales personalizados */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #F9FAFB;
+  color: #1F2937;
+}
+
+/* Utilidades personalizadas */
+.btn-primary {
+  @apply bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors;
+}
+
+.btn-success {
+  @apply bg-secondary text-white px-6 py-2 rounded-lg font-medium hover:bg-green-600 transition-colors;
+}
+

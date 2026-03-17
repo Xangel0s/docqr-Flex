@@ -1,0 +1,6 @@
+Serving SPA from C:\Users\Lenovo\Documents\GEOFALQR\docqr-frontend\dist\docqr-frontend on http://127.0.0.1:4200
+127.0.0.1 - - [16/Mar/2026 16:13:57] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [16/Mar/2026 16:14:25] "GET /ng-cli-ws HTTP/1.1" 200 -
+127.0.0.1 - - [16/Mar/2026 16:14:27] "GET /ng-cli-ws HTTP/1.1" 200 -
+127.0.0.1 - - [16/Mar/2026 16:22:58] "GET /ng-cli-ws HTTP/1.1" 200 -
+127.0.0.1 - - [16/Mar/2026 16:23:00] "GET /ng-cli-ws HTTP/1.1" 200 -

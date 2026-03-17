@@ -1,0 +1,67 @@
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+- Generating browser application bundles (phase: setup)...
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:283:10 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+283     this.applyFileToRow(row, file);
+             ~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:321:38 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+321       const validationMessage = this.applyFileToRow(this.rows[index], file);
+                                         ~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:283:10 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+283     this.applyFileToRow(row, file);
+             ~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:321:38 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+321       const validationMessage = this.applyFileToRow(this.rows[index], file);
+                                         ~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:283:10 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+283     this.applyFileToRow(row, file);
+             ~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:321:38 - error TS2339: Property 'applyFileToRow' does not exist on type 'BulkUploadComponent'.
+
+321       const validationMessage = this.applyFileToRow(this.rows[index], file);
+                                         ~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.

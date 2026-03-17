@@ -1,0 +1,10 @@
+{
+  "name": "docqr-api",
+  "version": "1.0.0",
+  "description": "Scripts para construir y servir el frontend desde Laravel",
+  "scripts": {
+    "build:frontend": "powershell -ExecutionPolicy Bypass -File scripts/build-y-servir-frontend.ps1",
+    "build:frontend:unix": "cd ../docqr-frontend && ng build --configuration=production && cd ../docqr-api && rm -rf public/frontend && mkdir -p public/frontend && cp -r ../docqr-frontend/dist/docqr-frontend/* public/frontend/"
+  }
+}
+

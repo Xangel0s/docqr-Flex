@@ -1,0 +1,29 @@
+# Archivos ZIP de producción
+*.zip
+
+# Laravel
+docqr-api/vendor/
+docqr-api/.env
+docqr-api/storage/logs/*.log
+docqr-api/storage/framework/cache/
+docqr-api/storage/framework/sessions/
+docqr-api/storage/framework/views/
+docqr-api/storage/app/uploads/
+docqr-api/bootstrap/cache/
+docqr-api/database/*.sqlite
+
+# Angular
+docqr-frontend/node_modules/
+docqr-frontend/dist/
+docqr-frontend/.angular/
+
+# Python microservice
+docqr-pdf-analyzer/venv/
+docqr-pdf-analyzer/__pycache__/
+docqr-pdf-analyzer/app/__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp

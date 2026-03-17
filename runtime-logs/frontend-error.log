@@ -1,0 +1,775 @@
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+- Generating browser application bundles (phase: setup)...
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:472:5 - error TS2739: Type '{ rowId: string; code: string; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; errorMessage: null; result: null; }' is missing the following properties from type 'BulkDraftRow': checkingCode, codeExists, codeError
+
+472     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:546:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; errorMessage: null; result: null; }' is missing the following properties from type 'BulkDraftRow': embedStatus, embedErrorMessage, finalPdfUrl
+
+546     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:564:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; errorMessage: null; result: null; }' is missing the following properties from type 'BulkDraftRow': embedStatus, embedErrorMessage, finalPdfUrl
+
+564     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:73:12 - error TS2339: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'.
+
+73       this.syncTemplateSource();
+              ~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:128:10 - error TS2339: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'.
+
+128     this.syncTemplateSource();
+             ~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:362:10 - error TS2339: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'.
+
+362     this.syncTemplateSource();
+             ~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:588:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; errorMessage: null; result: null; }' is missing the following properties from type 'BulkDraftRow': embedStatus, embedErrorMessage, finalPdfUrl
+
+588     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:73:12 - error TS2551: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'. Did you mean 'setTemplateSource'?
+
+73       this.syncTemplateSource();
+              ~~~~~~~~~~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:573:3
+    573   setTemplateSource(rowId: string): void {
+          ~~~~~~~~~~~~~~~~~
+    'setTemplateSource' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:128:10 - error TS2551: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'. Did you mean 'setTemplateSource'?
+
+128     this.syncTemplateSource();
+             ~~~~~~~~~~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:573:3
+    573   setTemplateSource(rowId: string): void {
+          ~~~~~~~~~~~~~~~~~
+    'setTemplateSource' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:362:10 - error TS2551: Property 'syncTemplateSource' does not exist on type 'BulkUploadComponent'. Did you mean 'setTemplateSource'?
+
+362     this.syncTemplateSource();
+             ~~~~~~~~~~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:573:3
+    573   setTemplateSource(rowId: string): void {
+          ~~~~~~~~~~~~~~~~~
+    'setTemplateSource' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:640:18 - error TS2339: Property 'persistCurrentState' does not exist on type 'BulkUploadComponent'.
+
+640       await this.persistCurrentState();
+                     ~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:706:16 - error TS2339: Property 'persistCurrentState' does not exist on type 'BulkUploadComponent'.
+
+706     await this.persistCurrentState();
+                   ~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:795:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; errorMessage: null; result: null; }' is missing the following properties from type 'BulkDraftRow': embedStatus, embedErrorMessage, finalPdfUrl
+
+795     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:811:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+811     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:811:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+811     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:814:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+814     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:93:43 - error TS2554: Expected 0 arguments, but got 1.
+
+93       void this.refreshTemplateFromSample(true);
+                                             ~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:97:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+97       void this.syncRowsAfterManualEdit();
+                   ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:828:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+828     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:97:43 - error TS2554: Expected 0 arguments, but got 1.
+
+97       void this.refreshTemplateFromSample(true);
+                                             ~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:101:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+101       void this.syncRowsAfterManualEdit();
+                    ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:844:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+844     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:97:43 - error TS2554: Expected 0 arguments, but got 1.
+
+97       void this.refreshTemplateFromSample(true);
+                                             ~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:101:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+101       void this.syncRowsAfterManualEdit();
+                    ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:562:52 - error TS2339: Property 'hasInjectedPdf' does not exist on type 'BulkUploadComponent'.
+
+562     return this.uploadedRows.filter((row) => !this.hasInjectedPdf(row)).length;
+                                                       ~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:858:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+858     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:97:43 - error TS2554: Expected 0 arguments, but got 1.
+
+97       void this.refreshTemplateFromSample(true);
+                                             ~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:101:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+101       void this.syncRowsAfterManualEdit();
+                    ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:884:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+884     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:101:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+101       void this.syncRowsAfterManualEdit();
+                    ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:960:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+960     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:101:17 - error TS2339: Property 'syncRowsAfterManualEdit' does not exist on type 'BulkUploadComponent'.
+
+101       void this.syncRowsAfterManualEdit();
+                    ~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:966:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+966     return {
+        ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:1024:5 - error TS2739: Type '{ rowId: string; code: string; checkingCode: false; codeExists: false; codeError: null; emissionDate: string; fileName: string; fileType: string; fileLastModified: number; file: null; status: "draft"; ... 4 more ...; result: null; }' is missing the following properties from type 'BulkDraftRow': pdfDuplicateError, reviewStatus
+
+1024     return {
+         ~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:78:14 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+78         this.refreshPdfDuplicateValidation(this.storedDraft.rows);
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:151:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+151     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:190:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+190     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:202:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+202     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:251:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+251     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:266:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+266     this.refreshPdfDuplicateValidation(this.rows);
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:1126:10 - error TS2339: Property 'refreshPdfDuplicateValidation' does not exist on type 'BulkUploadComponent'.
+
+1126     this.refreshPdfDuplicateValidation(rows);
+              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:394:37 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+394         const uploaded = await this.uploadRow(row);
+                                        ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:453:39 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+453           const uploaded = await this.uploadRow(row);
+                                          ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:394:37 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+394         const uploaded = await this.uploadRow(row);
+                                        ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:453:39 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+453           const uploaded = await this.uploadRow(row);
+                                          ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:136:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+136       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:141:12 - error TS2339: Property 'closeEditorModal' does not exist on type 'BulkUploadComponent'.
+
+141       this.closeEditorModal();
+               ~~~~~~~~~~~~~~~~
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:394:37 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+394         const uploaded = await this.uploadRow(row);
+                                        ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:453:39 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+453           const uploaded = await this.uploadRow(row);
+                                          ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+
+√ Browser application bundle generation complete.
+
+Error: src/app/features/documents/bulk-upload.component.ts:394:37 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+394         const uploaded = await this.uploadRow(row);
+                                        ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+Error: src/app/features/documents/bulk-upload.component.ts:453:39 - error TS2551: Property 'uploadRow' does not exist on type 'BulkUploadComponent'. Did you mean 'uploadedRows'?
+
+453           const uploaded = await this.uploadRow(row);
+                                          ~~~~~~~~~
+
+  src/app/features/documents/bulk-upload.component.ts:671:7
+    671   get uploadedRows(): BulkDraftRow[] {
+              ~~~~~~~~~~~~
+    'uploadedRows' is declared here.
+
+
+
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
+√ Browser application bundle generation complete.
