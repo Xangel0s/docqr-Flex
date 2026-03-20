@@ -43,7 +43,6 @@ class Document extends Model
         'prefix_code',
         'code',
         'folder_name', // Nueva columna para el sistema QR
-        'emission_date',
         'file_name',
         'file_size',
         'documenting_user_id',
@@ -67,7 +66,6 @@ class Document extends Model
         'is_active' => 'boolean',
         'creation_date' => 'datetime',
         'update_date' => 'datetime',
-        'emission_date' => 'date',
         'last_scanned_at' => 'datetime',
         'qr_position' => 'array',
         'scan_count' => 'integer',

@@ -22,14 +22,12 @@ export class AttachDocumentComponent implements OnInit {
   sidebarOpen: boolean = false;
   documentType: string = '';
   folderName: string = ''; // Solo la parte editable (sin las siglas)
-  emissionDate: string = '';
+  fechaEmision: string = new Date().toISOString().split('T')[0];
   isCreating: boolean = false;
   codeExists: boolean = false;
   checkingCode: boolean = false;
   folderNameError: string | null = null;
-  emissionDateError: string | null = null;
   private checkCodeTimeout: any = null;
-  readonly maxEmissionDate: string = this.getTodayDateString();
 
   // Tipos de documentos con sus siglas
   documentTypes = [
@@ -53,45 +51,17 @@ export class AttachDocumentComponent implements OnInit {
   }
 
   /**
-   * Obtener fecha actual en formato YYYY-MM-DD usando hora local
-   */
-  private getTodayDateString(): string {
-    const now = new Date();
-    const offset = now.getTimezoneOffset();
-    const localDate = new Date(now.getTime() - offset * 60000);
-    return localDate.toISOString().split('T')[0];
-  }
-
-  /**
    * Validar formulario
    */
   isFormValid(): boolean {
     return !!(
       this.documentType &&
       this.folderName.trim() &&
-      this.emissionDate &&
-      !this.emissionDateError &&
+      this.fechaEmision &&
       !this.codeExists &&
       !this.folderNameError &&
       !this.checkingCode
     );
-  }
-
-  /**
-   * Validar fecha de emisión
-   */
-  validateEmissionDate(): void {
-    if (!this.emissionDate) {
-      this.emissionDateError = 'La fecha de emisión es obligatoria';
-      return;
-    }
-
-    if (this.emissionDate > this.maxEmissionDate) {
-      this.emissionDateError = 'La fecha de emisión no puede ser futura';
-      return;
-    }
-
-    this.emissionDateError = null;
   }
 
   /**
@@ -184,8 +154,8 @@ export class AttachDocumentComponent implements OnInit {
       return;
     }
 
-    this.validateEmissionDate();
-    if (this.emissionDateError) {
+    if (!this.fechaEmision) {
+      this.notificationService.showError('Por favor selecciona la fecha de emisión');
       return;
     }
 
@@ -208,7 +178,7 @@ export class AttachDocumentComponent implements OnInit {
     this.isCreating = true;
 
     // Crear documento sin PDF (solo genera el QR)
-    this.docqrService.createDocumentWithoutPdf(fullFolderName, this.emissionDate).subscribe({
+    this.docqrService.createDocumentWithoutPdf(fullFolderName, this.fechaEmision).subscribe({
       next: (response) => {
         this.isCreating = false;
 

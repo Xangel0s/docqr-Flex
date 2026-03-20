@@ -148,14 +148,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Formatear fecha de emisión
-   */
-  formatEmissionDate(date: string | null): string {
-    if (!date) return 'Sin fecha de emisión';
-    return new Date(`${date}T00:00:00`).toLocaleDateString('es-ES');
-  }
-
-  /**
    * Toggle del sidebar
    */
   onToggleSidebar(): void {
@@ -239,3 +231,4 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 }
+

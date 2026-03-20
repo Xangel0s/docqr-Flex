@@ -1,27 +1,35 @@
-# Archivos ZIP de producción
+# Deployment archives
 *.zip
 
-# Laravel
+# Backend
 docqr-api/vendor/
 docqr-api/.env
+docqr-api/.env.local
+docqr-api/storage/*.key
 docqr-api/storage/logs/*.log
 docqr-api/storage/framework/cache/
 docqr-api/storage/framework/sessions/
 docqr-api/storage/framework/views/
 docqr-api/storage/app/uploads/
+docqr-api/storage/app/qrcodes/
+docqr-api/storage/app/final/
 docqr-api/bootstrap/cache/
 docqr-api/database/*.sqlite
+docqr-api/error_log
+docqr-api/public/error_log
 
-# Angular
+# Frontend
 docqr-frontend/node_modules/
 docqr-frontend/dist/
 docqr-frontend/.angular/
+docqr-frontend/startup_log.txt
 
-# Python microservice
-docqr-pdf-analyzer/venv/
-docqr-pdf-analyzer/__pycache__/
-docqr-pdf-analyzer/app/__pycache__/
-*.pyc
+# Local workspace artifacts
+_tmp_docqr_Flex_remote_20260320/
+grersced_docqr.sql
+startup_log.txt
+tmp-*.pdf
+F-*.pdf
 
 # IDE
 .idea/

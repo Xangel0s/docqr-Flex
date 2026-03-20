@@ -1,5 +1,5 @@
-<div [class.min-h-screen]="!embeddedMode" class="bg-background-light flex h-full">
-  <app-sidebar 
+<div class="bg-background-light flex" [class.min-h-screen]="!embeddedMode" [class.h-full]="embeddedMode">
+  <app-sidebar
     *ngIf="!embeddedMode"
     [isOpen]="sidebarOpen"
     (closeSidebar)="onCloseSidebar()">
@@ -13,37 +13,29 @@
       <div class="mb-6">
         <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900">
-              {{ embeddedMode ? (embeddedContext === 'sample' ? 'Posiciona el QR muestra' : 'Ajusta este documento') : 'Editor de PDF' }}
-            </h1>
+            <h1 class="text-3xl font-bold text-gray-900">Editor de PDF</h1>
             <p class="text-base text-gray-600 mt-1">
-              {{
-                embeddedMode
-                  ? (embeddedContext === 'sample'
-                    ? 'Ubica el QR una sola vez. Esa posición se usará como plantilla para el resto del lote.'
-                    : 'Corrige solo este documento y vuelve a la tabla sin salir del módulo masivo.')
-                  : 'Arrastra y ajusta el tamaño del código QR sobre el documento'
-              }}
+              Arrastra y ajusta el tamaño del código QR sobre el documento
             </p>
           </div>
           <div class="flex items-center gap-3">
-            <button 
+            <button
+              *ngIf="!embeddedMode"
               type="button"
               (click)="cancel()"
               [disabled]="saving"
               class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium">
               <span class="material-symbols-outlined text-lg mr-2 align-middle">close</span>
-              {{ embeddedMode ? 'Cerrar' : 'Cancelar' }}
+              Cancelar
             </button>
             <button 
               type="button"
               (click)="savePosition()"
               [disabled]="saving || loading"
-              class="btn-primary"
-              [class.button-with-animation]="!embeddedMode">
+              class="btn-primary button-with-animation">
               <span *ngIf="saving" class="material-symbols-outlined text-lg mr-2 animate-spin align-middle">sync</span>
               <span *ngIf="!saving" class="material-symbols-outlined text-lg mr-2 align-middle">save</span>
-              {{ saving ? 'Guardando...' : (embeddedMode ? 'Guardar y volver al lote' : 'Guardar Posición') }}
+              {{ saving ? 'Guardando...' : 'Guardar Posición' }}
             </button>
           </div>
         </div>
@@ -58,10 +50,6 @@
             <div>
               <span class="text-gray-500">Código:</span>
               <span class="font-medium text-gray-900 ml-2">{{ document.folder_name }}</span>
-            </div>
-            <div>
-              <span class="text-gray-500">Fecha de emisión:</span>
-              <span class="font-medium text-gray-900 ml-2">{{ formatEmissionDate(document.emission_date) }}</span>
             </div>
             <div *ngIf="getQrInfo()">
               <span class="text-gray-500">Tamaño del QR:</span>
@@ -87,27 +75,6 @@
       <div class="flex flex-col lg:flex-row gap-6">
         <!-- Contenedor del PDF y QR -->
         <div class="flex-1 bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-          <div *ngIf="embeddedMode" class="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">Paso 1</p>
-                <p class="text-sm text-blue-900">Arrastra el QR hasta la posición correcta.</p>
-              </div>
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">Paso 2</p>
-                <p class="text-sm text-blue-900">Ajusta el tamaño desde la esquina azul del QR.</p>
-              </div>
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">Paso 3</p>
-                <p class="text-sm text-blue-900">
-                  {{ embeddedContext === 'sample'
-                    ? 'Guarda para usar esta ubicación como plantilla del lote.'
-                    : 'Guarda para actualizar este documento en la tabla.' }}
-                </p>
-              </div>
-            </div>
-          </div>
-
           <!-- Loading -->
           <div *ngIf="loading" class="flex flex-col items-center justify-center py-20">
             <span class="material-symbols-outlined text-6xl text-primary mb-4 animate-spin">sync</span>
@@ -194,10 +161,29 @@
         </div>
 
         <!-- Sidebar Derecho con Acciones -->
-        <div *ngIf="!embeddedMode" class="w-full lg:w-80 bg-white rounded-xl shadow-lg border border-gray-200 p-6 h-fit lg:sticky lg:top-6">
+        <div class="w-full lg:w-80 bg-white rounded-xl shadow-lg border border-gray-200 p-6 h-fit lg:sticky lg:top-6">
           <h2 class="text-lg font-bold text-gray-900 mb-4">Acciones Rápidas</h2>
           
           <div class="space-y-3">
+            <button
+              type="button"
+              (click)="removeSelectedQr()"
+              [disabled]="!selectedQr"
+              class="button-with-animation w-full flex items-center justify-between px-4 py-3 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined">delete</span>
+                <span class="text-sm font-medium">Eliminar QR seleccionado</span>
+              </div>
+              <span class="material-symbols-outlined text-lg">delete_forever</span>
+            </button>
+
+            <div *ngIf="getTotalQrsCount() > 0 && !selectedQr" class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p class="text-xs text-amber-800">
+                <span class="material-symbols-outlined text-sm align-middle">touch_app</span>
+                Selecciona un QR antes de eliminarlo.
+              </p>
+            </div>
+
             <!-- Copiar URL del QR -->
             <button 
               type="button"
@@ -272,7 +258,14 @@
             </div>
             
             <!-- Mensaje si está guardado pero aún no hay final_pdf_url -->
-            <div *ngIf="document?.status === 'completed' && !document?.final_pdf_url" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div *ngIf="document?.status === 'completed' && !document?.final_pdf_url && document?.render_mode === 'overlay'" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-xs text-blue-800">
+                <span class="material-symbols-outlined text-sm align-middle">verified</span>
+                PDF firmado detectado. El QR se aloja en la vista pública sin modificar la firma original.
+              </p>
+            </div>
+
+            <div *ngIf="document?.status === 'completed' && !document?.final_pdf_url && document?.render_mode !== 'overlay'" class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p class="text-xs text-blue-800">
                 <span class="material-symbols-outlined text-sm align-middle">sync</span>
                 Procesando PDF... Espera unos segundos y recarga la página.

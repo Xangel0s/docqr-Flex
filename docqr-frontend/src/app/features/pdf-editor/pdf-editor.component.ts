@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Title } from '@angular/platform-browser';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { DocqrService, Document } from '../../core/services/docqr.service';
+import { DocqrService, Document, EmbedResponse } from '../../core/services/docqr.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { HeaderComponent } from '../../shared/components/header/header.component';
 import { SidebarComponent } from '../../shared/components/sidebar/sidebar.component';
@@ -32,9 +32,8 @@ if (typeof window !== 'undefined') {
 })
 export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   sidebarOpen: boolean = false;
-  qrId: string = '';
   embeddedMode: boolean = false;
-  embeddedContext: 'sample' | 'edit' = 'edit';
+  qrId: string = '';
   document: Document | null = null;
   loading: boolean = true;
   saving: boolean = false;
@@ -118,6 +117,34 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     offsetY: 0
   };
 
+  private readonly globalQrKeydownHandler = (evt: KeyboardEvent) => {
+    const activeSelection = this.getActiveQrSelection();
+    const shouldGuardDeleteNavigation = this.embeddedMode && !this.isEditableTarget(evt.target);
+    if (!activeSelection && !shouldGuardDeleteNavigation) {
+      return;
+    }
+
+    if (evt.key === 'Delete' || evt.key === 'Backspace') {
+      evt.preventDefault();
+      evt.stopPropagation();
+      evt.stopImmediatePropagation();
+      console.log('🗑️ Tecla Delete/Backspace interceptada globalmente');
+      if (activeSelection) {
+        this.deleteQr(activeSelection.obj, activeSelection.canvas, activeSelection.pageNumber);
+      } else {
+        console.log('Tecla Delete/Backspace bloqueada para evitar navegacion accidental');
+      }
+      return;
+    }
+
+    if (false) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      evt.stopImmediatePropagation();
+      console.log('⏎ Enter bloqueado para evitar navegación accidental');
+    }
+  };
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -130,7 +157,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.qrId = this.route.snapshot.paramMap.get('qrId') || '';
     this.embeddedMode = this.route.snapshot.queryParamMap.get('embedded') === '1';
-    this.embeddedContext = this.route.snapshot.queryParamMap.get('context') === 'sample' ? 'sample' : 'edit';
+    document.addEventListener('keydown', this.globalQrKeydownHandler, true);
   }
 
   ngAfterViewInit(): void {
@@ -143,6 +170,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    document.removeEventListener('keydown', this.globalQrKeydownHandler, true);
     // Limpiar recursos
     if (this.renderTask) {
       this.renderTask.cancel();
@@ -150,6 +178,30 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     // Limpiar todos los canvas
     this.fabricCanvases.forEach(canvas => canvas.dispose());
     this.fabricCanvases.clear();
+  }
+
+  private getActiveQrSelection(): { pageNumber: number; canvas: Canvas; obj: any } | null {
+    for (const [pageNumber, canvas] of this.fabricCanvases.entries()) {
+      const obj = canvas.getActiveObject();
+      const pdfImage = this.pdfPages.get(pageNumber);
+
+      if (obj && obj !== pdfImage) {
+        return { pageNumber, canvas, obj };
+      }
+    }
+
+    return null;
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return target instanceof HTMLInputElement
+      || target instanceof HTMLTextAreaElement
+      || target instanceof HTMLSelectElement
+      || target.isContentEditable;
   }
 
   /**
@@ -817,16 +869,16 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       // Necesitamos convertirlas de vuelta al espacio del canvas antes de posicionar el QR
       let x = 50;
       let y = 50;
-      let width = 75;
-      let height = 75;
+      let width = 100;
+      let height = 100;
 
       if (this.document?.qr_position) {
         const pos = this.document.qr_position;
         // Las coordenadas guardadas están en espacio estándar (595x842)
         const standardX = pos.x ?? 50;
         const standardY = pos.y ?? 50;
-        const standardWidth = pos.width ?? 75;
-        const standardHeight = pos.height ?? 75;
+        const standardWidth = pos.width ?? 100;
+        const standardHeight = pos.height ?? 100;
         
         // Obtener dimensiones reales del PDF y escala
         // CRÍTICO: Estas dimensiones deben estar disponibles después de renderPdfAsBackground()
@@ -1702,16 +1754,12 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           
           if (response.success) {
             console.log(`🎉 ${qrs.length} QR(s) guardados exitosamente`);
-            this.notificationService.showSuccess(`✅ ${qrs.length} QR(s) embebido(s) exitosamente`);
-            if (this.document) {
-              if (response.data?.final_pdf_url) {
-                this.document.final_pdf_url = response.data.final_pdf_url;
-                console.log('📄 PDF final URL actualizada:', this.document.final_pdf_url);
-              }
-              this.document.status = 'completed';
-            }
+            this.notificationService.showSuccess(this.getSaveSuccessMessage(response, qrs.length));
+            this.applySavedQrState(response, {
+              ...qrs[0].position,
+              page_number: qrs[0].page
+            });
             this.saving = false;
-            this.postEmbeddedMessage('saved');
           } else {
             console.error('❌ Backend respondió con error:', response.message);
             this.notificationService.showError('Error al guardar las posiciones');
@@ -1719,6 +1767,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           }
         },
         error: (error: any) => {
+          const backendMessage = error?.error?.message || error?.message || 'Error al guardar las posiciones';
           console.error('❌❌❌ Error en la petición HTTP:', error);
           console.error('Detalles:', {
             status: error?.status,
@@ -1726,7 +1775,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
             message: error?.message,
             error: error?.error
           });
-          this.notificationService.showError('Error al guardar las posiciones');
+          this.notificationService.showError(backendMessage);
           this.saving = false;
         }
       });
@@ -1941,20 +1990,10 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.http.post(`${environment.apiUrl}/embed-pdf`, formData).subscribe({
         next: (response: any) => {
           if (response.success) {
-            this.notificationService.showSuccess('✅ QR embebido exitosamente');
-            // NO recargar el documento completo - solo actualizar las URLs
-            // Recargar causaría problemas si el PDF original fue eliminado
-            if (this.document) {
-              // Actualizar URLs con cache buster para forzar recarga
-              if (response.data?.final_pdf_url) {
-                this.document.final_pdf_url = response.data.final_pdf_url;
-              }
-              this.document.qr_position = position;
-              this.document.status = 'completed';
-            }
+            this.notificationService.showSuccess(this.getSaveSuccessMessage(response));
+            this.applySavedQrState(response, position);
             this.saving = false;
             this.retryAttempts = 0; // Reset en caso de éxito
-            this.postEmbeddedMessage('saved');
           } else {
             this.notificationService.showError(response.message || 'Error al guardar PDF');
             this.saving = false;
@@ -2016,28 +2055,54 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Este método es más confiable porque el backend garantiza que solo se procese la primera página
    * y no cree páginas adicionales
    */
+  private applySavedQrState(response: Partial<EmbedResponse>, fallbackPosition?: { x: number; y: number; width: number; height: number; page_number?: number }): void {
+    if (!this.document) {
+      return;
+    }
+
+    const responseData = response.data;
+    const savedPosition = responseData?.qr_position || fallbackPosition;
+
+    if (savedPosition) {
+      this.document.qr_position = savedPosition;
+    }
+
+    this.document.status = responseData?.status || 'completed';
+
+    if (responseData && Object.prototype.hasOwnProperty.call(responseData, 'final_pdf_url')) {
+      this.document.final_pdf_url = responseData.final_pdf_url ?? null;
+    }
+
+    if (responseData?.view_url) {
+      this.document.view_url = responseData.view_url;
+    }
+
+    if (responseData?.render_mode) {
+      this.document.render_mode = responseData.render_mode;
+    }
+  }
+
+  private getSaveSuccessMessage(response: Partial<EmbedResponse>, qrCount: number = 1): string {
+    if (response.data?.render_mode === 'overlay') {
+      return 'QR alojado sin modificar el PDF firmado. La firma original se conserva en la vista pública.';
+    }
+
+    return qrCount > 1
+      ? `✅ ${qrCount} QR(s) embebido(s) exitosamente`
+      : '✅ QR reposicionado exitosamente. El PDF final se ha actualizado.';
+  }
+
   private savePositionBackend(position: { x: number; y: number; width: number; height: number }, pageNumber: number = 1): void {
     this.docqrService.embedQr(this.qrId, position, pageNumber).subscribe({
       next: (response) => {
         if (response.success) {
-          // CRÍTICO: NO actualizar la posición del QR en el canvas después de guardar
-          // El objeto QR ya está en la posición correcta visualmente
-          // Actualizar con position.x/y causaría movimiento porque esas coordenadas son del espacio estándar (595x842)
-          // no del espacio del canvas actual
-          
-          // Actualizar el estado del documento en memoria
-          if (this.document) {
-            this.document.qr_position = {
-              x: position.x,
-              y: position.y,
-              width: position.width,
-              height: position.height
-            };
-            this.document.status = 'completed';
-            if (response.data?.final_pdf_url) {
-              this.document.final_pdf_url = response.data.final_pdf_url;
-            }
-          }
+          this.applySavedQrState(response, {
+            x: position.x,
+            y: position.y,
+            width: position.width,
+            height: position.height,
+            page_number: pageNumber
+          });
           
           // ACTUALIZACIÓN INSTANTÁNEA: Actualizar URLs con nuevos timestamps para evitar caché
           // Esto permite que cuando el usuario descargue o vea el PDF, vea la versión actualizada
@@ -2060,8 +2125,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
           this.saving = false;
           
           // Mostrar mensaje de éxito con notificación
-          this.notificationService.showSuccess('✅ QR reposicionado exitosamente. El PDF final se ha actualizado.');
-          this.postEmbeddedMessage('saved');
+          this.notificationService.showSuccess(this.getSaveSuccessMessage(response));
           
           // NO descargar automáticamente - el usuario puede descargar cuando quiera usando el botón
         } else {
@@ -2160,31 +2224,7 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   confirmCancel(): void {
     this.closeCancelModal();
-
-    if (this.embeddedMode) {
-      this.postEmbeddedMessage('closed');
-      return;
-    }
-
     this.router.navigate(['/documents']);
-  }
-
-  /**
-   * Notificar al contenedor padre cuando el editor se usa dentro de un modal
-   */
-  private postEmbeddedMessage(type: 'saved' | 'closed'): void {
-    if (!this.embeddedMode || typeof window === 'undefined' || window.parent === window) {
-      return;
-    }
-
-    window.parent.postMessage(
-      {
-        source: 'docqr-editor',
-        type,
-        qrId: this.qrId
-      },
-      window.location.origin
-    );
   }
 
   /**
@@ -2196,17 +2236,6 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
   onCloseSidebar(): void {
     this.sidebarOpen = false;
-  }
-
-  /**
-   * Formatear fecha de emisión
-   */
-  formatEmissionDate(date: string | null | undefined): string {
-    if (!date) {
-      return 'Sin fecha de emisión';
-    }
-
-    return new Date(`${date}T00:00:00`).toLocaleDateString('es-ES');
   }
 
   /**
@@ -2356,6 +2385,13 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    * Eliminar QR seleccionado
    */
   removeSelectedQr(): void {
+    const activeSelection = this.getActiveQrSelection();
+
+    if (activeSelection) {
+      this.deleteQr(activeSelection.obj, activeSelection.canvas, activeSelection.pageNumber);
+      return;
+    }
+
     if (!this.selectedQr) {
       this.notificationService.showError('No hay QR seleccionado');
       return;
@@ -2745,27 +2781,21 @@ export class PdfEditorComponent implements OnInit, AfterViewInit, OnDestroy {
    */
   private deleteQr(obj: any, canvas: Canvas, pageNumber: number): void {
     // Eliminar del canvas
+    const qrs = this.qrObjects.get(pageNumber) || [];
+    const removedIndex = qrs.indexOf(obj);
+
+    canvas.discardActiveObject();
     canvas.remove(obj);
     canvas.renderAll();
 
     // Eliminar del mapa de QRs
-    const qrs = this.qrObjects.get(pageNumber);
-    if (qrs) {
-      const index = qrs.indexOf(obj);
-      if (index > -1) {
-        qrs.splice(index, 1);
-      }
+    if (removedIndex > -1) {
+      qrs.splice(removedIndex, 1);
     }
 
     // Limpiar selección si era el QR seleccionado
-    if (this.selectedQr?.page === pageNumber) {
-      const qrs = this.qrObjects.get(pageNumber);
-      if (qrs) {
-        const index = qrs.indexOf(obj);
-        if (this.selectedQr.index === index) {
-          this.selectedQr = null;
-        }
-      }
+    if (this.selectedQr?.page === pageNumber && (removedIndex === -1 || this.selectedQr.index === removedIndex)) {
+      this.selectedQr = null;
     }
 
     this.notificationService.showSuccess('QR eliminado correctamente');

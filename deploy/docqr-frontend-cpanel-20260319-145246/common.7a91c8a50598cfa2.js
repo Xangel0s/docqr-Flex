@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocqr_frontend=self.webpackChunkdocqr_frontend||[]).push([[76],{4843:(i,t,e)=>{e.d(t,{_:()=>c});var o=e(9350),_=e(7707);function c(b,s){const f="object"==typeof s;return new Promise((r,n)=>{const u=new _.Ms({next:d=>{r(d),u.unsubscribe()},error:n,complete:()=>{f?r(s.defaultValue):n(new o.G)}});b.subscribe(u)})}}}]);

@@ -30,7 +30,7 @@
             <button 
               type="button"
               (click)="saveAndFinish()"
-              [disabled]="!document?.pdf_url || isUploading || isSaving"
+              [disabled]="!document?.has_pdf || isUploading || isSaving"
               class="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95">
               <span *ngIf="!isSaving" class="material-symbols-outlined text-lg mr-2 align-middle">save</span>
               <span *ngIf="isSaving" class="material-symbols-outlined text-lg mr-2 align-middle animate-spin">sync</span>
@@ -63,8 +63,8 @@
               </span>
             </div>
             <div>
-              <p class="text-xs font-medium text-gray-500 mb-1">Fecha de emisión</p>
-              <p class="text-sm text-gray-900">{{ formatEmissionDate(document.emission_date) }}</p>
+              <p class="text-xs font-medium text-gray-500 mb-1">Fecha de Emisión</p>
+              <p class="text-sm text-gray-900">{{ formatDate(document.fecha_emision) }}</p>
             </div>
           </div>
         </div>
@@ -154,7 +154,7 @@
           <h2 class="text-xl font-bold text-gray-900 mb-4">Subir PDF Final</h2>
 
           <!-- PDF existente (si hay) -->
-          <div *ngIf="document.pdf_url" class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div *ngIf="document.has_pdf" class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <div class="flex items-center gap-3 mb-2">
               <span class="material-symbols-outlined text-blue-600">picture_as_pdf</span>
               <p class="text-sm font-medium text-blue-900">PDF actual: {{ document.original_filename }}</p>
@@ -170,14 +170,15 @@
 
           <!-- Área de drag & drop -->
           <div
-            class="flex flex-col items-center gap-4 rounded-lg border-2 border-dashed px-6 py-10 transition-all duration-300 hover:border-primary hover:bg-primary hover:bg-opacity-5 mb-4 hover:scale-[1.02] active:scale-[0.98]"
+            class="flex flex-col items-center gap-4 rounded-lg border-2 border-dashed px-6 py-10 transition-all duration-300 cursor-pointer hover:border-primary hover:bg-primary hover:bg-opacity-5 mb-4 hover:scale-[1.02] active:scale-[0.98]"
             [ngClass]="{
               'border-primary bg-primary bg-opacity-10 scale-[1.02]': dragOver,
               'border-gray-300': !dragOver
             }"
             (dragover)="onDragOver($event)"
             (dragleave)="onDragLeave($event)"
-            (drop)="onDrop($event)">
+            (drop)="onDrop($event)"
+            (click)="fileInput.click()">
             
             <div class="flex h-16 w-16 items-center justify-center rounded-full bg-primary bg-opacity-10 transition-all duration-300 hover:scale-110 hover:bg-opacity-20 hover:rotate-3">
               <span class="material-symbols-outlined text-primary text-4xl transition-transform duration-300 hover:scale-110">upload_file</span>
@@ -190,12 +191,15 @@
               <p class="text-sm text-gray-600 mb-4">
                 o elige un archivo de tu computadora
               </p>
+              <div class="btn-primary transition-all duration-200 hover:scale-105 active:scale-95 hover:shadow-md">
+                Seleccionar Archivo
+              </div>
               <input
                 #fileInput
                 id="file-input"
                 type="file"
-                accept=".pdf,application/pdf"
-                class="mx-auto block w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/90"
+                accept=".pdf"
+                class="hidden"
                 (change)="onFileSelected($event)">
             </div>
           </div>
@@ -245,7 +249,7 @@
             class="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 active:scale-95 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 disabled:active:scale-100 disabled:hover:scale-100">
             <span *ngIf="!isUploading" class="material-symbols-outlined text-lg mr-2 align-middle transition-transform duration-200">upload</span>
             <span *ngIf="isUploading" class="material-symbols-outlined text-lg mr-2 align-middle animate-spin">sync</span>
-            {{ isUploading ? 'Subiendo...' : (document.pdf_url ? 'Reemplazar PDF' : 'Subir PDF') }}
+            {{ isUploading ? 'Subiendo...' : (document.has_pdf ? 'Reemplazar PDF' : 'Subir PDF') }}
           </button>
 
           <!-- Información -->

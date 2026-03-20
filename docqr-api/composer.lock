@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "308486ea0f32aa24b26490eb52fa7a9e",
+    "content-hash": "f848b00087657e4c3cc2e7d13767c0d3",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -3463,57 +3463,6 @@
                 }
             ],
             "time": "2025-08-05T09:57:14+00:00"
-        },
-        {
-            "name": "smalot/pdfparser",
-            "version": "v2.1.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/smalot/pdfparser.git",
-                "reference": "4551cd0f07447d0865db7d89e07e6a7143536058"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/smalot/pdfparser/zipball/4551cd0f07447d0865db7d89e07e6a7143536058",
-                "reference": "4551cd0f07447d0865db7d89e07e6a7143536058",
-                "shasum": ""
-            },
-            "require": {
-                "ext-iconv": "*",
-                "ext-zlib": "*",
-                "php": ">=7.1",
-                "symfony/polyfill-mbstring": "^1.18"
-            },
-            "type": "library",
-            "autoload": {
-                "psr-0": {
-                    "Smalot\\PdfParser\\": "src/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "LGPL-3.0"
-            ],
-            "authors": [
-                {
-                    "name": "Sebastien MALOT",
-                    "email": "sebastien@malot.fr"
-                }
-            ],
-            "description": "Pdf parser library. Can read and extract information from pdf file.",
-            "homepage": "https://www.pdfparser.org",
-            "keywords": [
-                "extract",
-                "parse",
-                "parser",
-                "pdf",
-                "text"
-            ],
-            "support": {
-                "issues": "https://github.com/smalot/pdfparser/issues",
-                "source": "https://github.com/smalot/pdfparser/tree/v2.1.0"
-            },
-            "time": "2022-02-03T13:28:46+00:00"
         },
         {
             "name": "symfony/clock",
@@ -8480,5 +8429,5 @@
         "php": "^8.1"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

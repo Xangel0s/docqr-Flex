@@ -1,18 +1,19 @@
 # DocQR
 
-Sistema de gestión de documentos PDF con códigos QR para Geofal.
+Sistema de gestion de documentos PDF con codigos QR para Geofal.
 
 ## Estructura
 
-- `docqr-frontend/`: aplicación Angular.
+- `docqr-frontend/`: aplicacion Angular.
 - `docqr-api/`: API Laravel.
+- `deploy/`: paquetes y manuales de despliegue.
 
 ## Novedades del cambio actual
 
-- `Fecha de emisión` obligatoria en los flujos de creación.
-- Nuevo módulo `Subida Masiva IN`.
+- `Fecha de emision` obligatoria en los flujos de creacion.
+- Nuevo modulo `Subida Masiva IN`.
 - Persistencia de borradores del lote masivo en `IndexedDB`.
-- Visualización de `Fecha de emisión` en dashboard, listado, adjunto y editor.
+- Visualizacion de `Fecha de emision` en dashboard, listado, adjunto y editor.
 
 ## Desarrollo local
 
@@ -35,21 +36,21 @@ npm install
 npm start
 ```
 
-Configuración local recomendada:
+Configuracion local recomendada:
 
 - Base de datos MySQL local.
 - Usuario `root`.
-- Sin contraseña.
+- Sin contrasena.
 - Ver plantilla en `docqr-api/.env.example`.
 
-## Producción
+## Produccion
 
-- Plantilla de variables: `docqr-api/.env.production.example`
-- Guía de despliegue: `DESPLIEGUE_GEOFAL.md`
+- Plantilla de variables: `docqr-api/.env.example`
+- Guia de despliegue: `DESPLIEGUE_GEOFAL.md`
 
-## Verificación mínima
+## Verificacion minima
 
-1. Crear documento simple con `Fecha de emisión`.
+1. Crear documento simple con `Fecha de emision`.
 2. Crear documento con flujo `Crear QR y Adjuntar PDF`.
 3. Procesar un lote desde `Subida Masiva IN`.
-4. Confirmar `Fecha de emisión` en `Mis Documentos` y dashboard.
+4. Confirmar `Fecha de emision` en `Mis Documentos` y dashboard.

@@ -27,11 +27,6 @@ export const routes: Routes = [
     canActivate: [AuthGuard]
   },
   {
-    path: 'documents/bulk-upload',
-    loadComponent: () => import('./features/documents/bulk-upload.component').then(m => m.BulkUploadComponent),
-    canActivate: [AuthGuard]
-  },
-  {
     path: 'documents/attach/:qrId/upload',
     loadComponent: () => import('./features/documents/attach-upload.component').then(m => m.AttachUploadComponent),
     canActivate: [AuthGuard]
@@ -57,6 +52,11 @@ export const routes: Routes = [
     canActivate: [AuthGuard]
   },
   {
+    path: 'bulk-upload',
+    loadComponent: () => import('./features/bulk-upload/bulk-upload.component').then(m => m.BulkUploadComponent),
+    canActivate: [AuthGuard]
+  },
+  {
     path: 'compression',
     loadComponent: () => import('./features/compression/compression.component').then(m => m.CompressionComponent),
     canActivate: [AuthGuard]
@@ -66,3 +66,4 @@ export const routes: Routes = [
     redirectTo: ''
   }
 ];
+

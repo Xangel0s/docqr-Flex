@@ -19,14 +19,15 @@
     <!-- Área de drag & drop -->
     <div class="mb-6">
       <div
-        class="flex flex-col items-center gap-6 rounded-lg border-2 border-dashed px-6 py-14 transition-colors hover:border-primary hover:bg-primary hover:bg-opacity-5"
+        class="flex flex-col items-center gap-6 rounded-lg border-2 border-dashed px-6 py-14 transition-colors cursor-pointer hover:border-primary hover:bg-primary hover:bg-opacity-5"
         [ngClass]="{
           'border-primary bg-primary bg-opacity-5': dragOver,
           'border-gray-300': !dragOver
         }"
         (dragover)="onDragOver($event)"
         (dragleave)="onDragLeave($event)"
-        (drop)="onDrop($event)">
+        (drop)="onDrop($event)"
+        (click)="fileInput.click()">
         
         <div class="flex h-16 w-16 items-center justify-center rounded-full bg-primary bg-opacity-10">
           <span class="material-symbols-outlined text-primary text-4xl">upload_file</span>
@@ -38,12 +39,15 @@
           </p>
           <p class="text-sm text-gray-600 mb-4">
             o elige un archivo de tu computadora</p>
+          <div class="btn-primary">
+            Seleccionar Archivo
+          </div>
           <input
             #fileInput
             id="file-input"
             type="file"
-            accept=".pdf,application/pdf"
-            class="mx-auto block w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/90"
+            accept=".pdf"
+            class="hidden"
             (change)="onFileSelected($event)">
         </div>
       </div>
@@ -151,25 +155,19 @@
             Código disponible
           </div>
         </div>
-
         <div class="flex flex-col gap-2">
-          <label for="emission-date" class="text-sm font-medium text-gray-800">
-            Fecha de emisión *
+          <label for="fecha-emision" class="text-sm font-medium text-gray-800">
+            Fecha de Emisión *
           </label>
           <input
-            id="emission-date"
+            id="fecha-emision"
             type="date"
-            [(ngModel)]="emissionDate"
-            (change)="validateEmissionDate()"
-            (blur)="validateEmissionDate()"
-            [max]="maxEmissionDate"
+            [(ngModel)]="fechaEmision"
             class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-primary focus:ring-primary focus:outline-none"
-            [class.border-red-500]="emissionDateError"
-            [class.border-green-500]="emissionDate && !emissionDateError"
             required>
-          <div *ngIf="emissionDateError" class="mt-1 text-xs text-red-600 flex items-center gap-1">
-            <span class="material-symbols-outlined text-xs">error</span>
-            {{ emissionDateError }}
+          <div class="mt-1 text-xs text-gray-500 flex items-center gap-1">
+            <span class="material-symbols-outlined text-xs">event</span>
+            Fecha reportada del documento
           </div>
         </div>
       </div>

@@ -15,8 +15,8 @@ export interface UploadResponse {
     pdf_url: string;
     qr_image_url: string;
     folder_name: string;
-    emission_date: string;
     original_filename: string;
+    fecha_emision?: string | null;
   };
 }
 
@@ -27,7 +27,9 @@ export interface EmbedResponse {
   success: boolean;
   message: string;
   data: {
-    final_pdf_url: string;
+    final_pdf_url: string | null;
+    view_url?: string | null;
+    render_mode?: string;
     status: string;
     qr_position: {
       x: number;
@@ -45,14 +47,17 @@ export interface Document {
   id: number;
   qr_id: string;
   folder_name: string;
-  emission_date: string | null;
   original_filename: string;
   file_size: number;
   qr_position: any;
   status: string;
+  has_pdf?: boolean;
   scan_count: number;
   last_scanned_at: string | null;
   created_at: string;
+  fecha_emision: string | null;
+  view_url?: string;
+  render_mode?: string;
   qr_url: string;
   pdf_url: string;
   pdf_original_url?: string; // URL del PDF original (para editor)
@@ -95,10 +100,11 @@ export interface StatsResponse {
       id: number;
       original_filename: string;
       folder_name: string;
-      emission_date: string | null;
       scan_count: number;
       last_scanned_at: string | null;
       status: string;
+      has_pdf?: boolean;
+      fecha_emision?: string | null;
     }>;
   };
 }
@@ -128,11 +134,11 @@ export class DocqrService {
   /**
    * Subir PDF y generar QR
    */
-  uploadPdf(file: File, folderName: string, emissionDate: string): Observable<UploadResponse> {
+  uploadPdf(file: File, folderName: string, fechaEmision: string): Observable<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder_name', folderName);
-    formData.append('emission_date', emissionDate);
+    formData.append('fecha_emision', fechaEmision);
 
     return this.http.post<UploadResponse>(`${this.apiUrl}/upload`, formData);
   }
@@ -240,7 +246,7 @@ export class DocqrService {
   /**
    * Crear documento y generar QR sin PDF (para flujo "Adjuntar")
    */
-  createDocumentWithoutPdf(folderName: string, emissionDate: string): Observable<{
+  createDocumentWithoutPdf(folderName: string, fechaEmision: string): Observable<{
     success: boolean;
     message: string;
     data: {
@@ -248,7 +254,7 @@ export class DocqrService {
       qr_url: string;
       qr_image_url: string;
       folder_name: string;
-      emission_date: string;
+      fecha_emision?: string | null;
     };
   }> {
     return this.http.post<{
@@ -259,11 +265,11 @@ export class DocqrService {
         qr_url: string;
         qr_image_url: string;
         folder_name: string;
-        emission_date: string;
+        fecha_emision?: string | null;
       };
     }>(`${this.apiUrl}/documents/create`, {
       folder_name: folderName,
-      emission_date: emissionDate
+      fecha_emision: fechaEmision
     });
   }
 
@@ -318,10 +324,10 @@ export class DocqrService {
   /**
    * Actualizar nombre de carpeta de un documento
    */
-  updateFolderName(qrId: string, folderName: string): Observable<{ success: boolean; message: string; data?: any }> {
+  updateFolderName(qrId: string, folderName: string, fechaEmision?: string | null): Observable<{ success: boolean; message: string; data?: any }> {
     return this.http.put<{ success: boolean; message: string; data?: any }>(
       `${this.apiUrl}/documents/qr/${qrId}/folder-name`,
-      { folder_name: folderName }
+      { folder_name: folderName, fecha_emision: fechaEmision }
     );
   }
 
@@ -489,4 +495,141 @@ export class DocqrService {
       {}
     );
   }
+
+  // ====================================
+  // MÓDULO CARGA MASIVA
+  // ====================================
+
+  /**
+   * Listar documentos del módulo masivo
+   */
+  getBulkDocuments(
+    search?: string,
+    page: number = 1,
+    perPage: number = 20,
+    filters?: { dateFrom?: string; dateTo?: string; sortBy?: string; sortOrder?: 'asc' | 'desc' }
+  ): Observable<BulkDocumentsResponse> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('per_page', perPage.toString());
+
+    if (search) params = params.set('search', search);
+    if (filters?.dateFrom) params = params.set('date_from', filters.dateFrom);
+    if (filters?.dateTo) params = params.set('date_to', filters.dateTo);
+    if (filters?.sortBy) params = params.set('sort_by', filters.sortBy);
+    if (filters?.sortOrder) params = params.set('sort_order', filters.sortOrder);
+
+    return this.http.get<BulkDocumentsResponse>(`${this.apiUrl}/bulk`, { params });
+  }
+
+  /**
+   * Verificar si un código existe (bulk)
+   */
+  bulkCheckCode(folderName: string): Observable<{ success: boolean; exists: boolean }> {
+    return this.http.get<{ success: boolean; exists: boolean }>(
+      `${this.apiUrl}/bulk/check-code`,
+      { params: { folder_name: folderName } }
+    );
+  }
+
+  /**
+   * Crear fila individual en módulo masivo
+   */
+  bulkCreateRow(folderName: string, fechaEmision: string): Observable<{ success: boolean; message: string; data: any }> {
+    return this.http.post<{ success: boolean; message: string; data: any }>(
+      `${this.apiUrl}/bulk/create-row`,
+      { folder_name: folderName, fecha_emision: fechaEmision }
+    );
+  }
+
+  /**
+   * Carga masiva de PDFs
+   */
+  bulkUpload(files: File[], fechaEmision: string): Observable<BulkUploadResponse> {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files[]', file, file.name));
+    formData.append('fecha_emision', fechaEmision);
+
+    return this.http.post<BulkUploadResponse>(`${this.apiUrl}/bulk/upload`, formData);
+  }
+
+  /**
+   * Inyectar PDF individual a un documento existente (bulk)
+   */
+  bulkInjectPdf(qrId: string, file: File): Observable<{ success: boolean; message: string; data: any }> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+
+    return this.http.post<{ success: boolean; message: string; data: any }>(
+      `${this.apiUrl}/bulk/inject/${qrId}`,
+      formData
+    );
+  }
+
+  /**
+   * Actualizar fecha de emisión
+   */
+  bulkUpdateFechaEmision(qrId: string, fechaEmision: string): Observable<{ success: boolean; message: string }> {
+    return this.http.put<{ success: boolean; message: string }>(
+      `${this.apiUrl}/bulk/fecha-emision/${qrId}`,
+      { fecha_emision: fechaEmision }
+    );
+  }
+}
+
+/**
+ * Interfaz para documento masivo
+ */
+export interface BulkDocument {
+  id: number;
+  qr_id: string;
+  folder_name: string;
+  original_filename: string | null;
+  fecha_emision: string | null;
+  file_size: number | null;
+  status: string;
+  has_pdf: boolean;
+  created_at: string;
+  qr_url: string;
+  pdf_url: string | null;
+  qr_image_url: string | null;
+}
+
+/**
+ * Interfaz para respuesta de documentos masivos
+ */
+export interface BulkDocumentsResponse {
+  success: boolean;
+  data: BulkDocument[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}
+
+/**
+ * Interfaz para respuesta de carga masiva
+ */
+export interface BulkUploadResponse {
+  success: boolean;
+  message: string;
+  data: {
+    created: Array<{
+      id: number;
+      qr_id: string;
+      folder_name: string;
+      original_filename: string;
+      fecha_emision: string;
+      file_size: number;
+      has_pdf: boolean;
+    }>;
+    errors: Array<{
+      file: string;
+      error: string;
+    }>;
+    total_created: number;
+    total_errors: number;
+  };
 }

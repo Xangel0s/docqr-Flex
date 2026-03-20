@@ -3,4 +3,3 @@ export const environment = {
   apiUrl: 'https://docqr-api.geofal.com.pe/api',
   baseUrl: 'https://docqr.geofal.com.pe'
 };
-

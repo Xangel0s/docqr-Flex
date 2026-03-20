@@ -23,13 +23,11 @@ export class UploadComponent implements OnInit {
   selectedFile: File | null = null;
   documentType: string = '';
   folderName: string = ''; // Solo la parte editable (sin las siglas)
-  emissionDate: string = '';
+  fechaEmision: string = new Date().toISOString().split('T')[0];
   isUploading: boolean = false;
   uploadProgress: number = 0;
   dragOver: boolean = false;
   sidebarOpen: boolean = false;
-  emissionDateError: string | null = null;
-  readonly maxEmissionDate: string = this.getTodayDateString();
   
   // Validación de código en tiempo real
   codeExists: boolean = false;
@@ -63,16 +61,6 @@ export class UploadComponent implements OnInit {
     if (window.innerWidth >= 768) {
       this.sidebarOpen = true;
     }
-  }
-
-  /**
-   * Obtener fecha actual en formato YYYY-MM-DD usando hora local
-   */
-  private getTodayDateString(): string {
-    const now = new Date();
-    const offset = now.getTimezoneOffset();
-    const localDate = new Date(now.getTime() - offset * 60000);
-    return localDate.toISOString().split('T')[0];
   }
 
   /**
@@ -123,7 +111,6 @@ export class UploadComponent implements OnInit {
     if (input.files && input.files.length > 0) {
       this.handleFile(input.files[0]);
     }
-    input.value = '';
   }
 
   /**
@@ -133,7 +120,6 @@ export class UploadComponent implements OnInit {
     // Validar tipo de archivo (por MIME type o extensión)
     const isValidPdf = file.type === 'application/pdf' || 
                        file.type === 'application/x-pdf' ||
-                       file.type === 'application/octet-stream' ||
                        file.name.toLowerCase().endsWith('.pdf');
     
     if (!isValidPdf) {
@@ -163,23 +149,6 @@ export class UploadComponent implements OnInit {
   removeFile(): void {
     this.selectedFile = null;
     this.uploadProgress = 0;
-  }
-
-  /**
-   * Validar fecha de emisión
-   */
-  validateEmissionDate(): void {
-    if (!this.emissionDate) {
-      this.emissionDateError = 'La fecha de emisión es obligatoria';
-      return;
-    }
-
-    if (this.emissionDate > this.maxEmissionDate) {
-      this.emissionDateError = 'La fecha de emisión no puede ser futura';
-      return;
-    }
-
-    this.emissionDateError = null;
   }
 
   /**
@@ -265,8 +234,7 @@ export class UploadComponent implements OnInit {
       this.selectedFile &&
       this.documentType &&
       this.folderName.trim() &&
-      this.emissionDate &&
-      !this.emissionDateError &&
+      this.fechaEmision &&
       !this.codeExists &&
       !this.folderNameError &&
       !this.checkingCode
@@ -293,8 +261,8 @@ export class UploadComponent implements OnInit {
       return;
     }
 
-    this.validateEmissionDate();
-    if (this.emissionDateError) {
+    if (!this.fechaEmision) {
+      this.notificationService.showError('Por favor selecciona la fecha de emisión');
       return;
     }
 
@@ -323,7 +291,7 @@ export class UploadComponent implements OnInit {
       }
     }, 200);
 
-    this.docqrService.uploadPdf(this.selectedFile, fullFolderName, this.emissionDate).subscribe({
+    this.docqrService.uploadPdf(this.selectedFile, fullFolderName, this.fechaEmision).subscribe({
       next: (response: UploadResponse) => {
         clearInterval(progressInterval);
         this.uploadProgress = 100;

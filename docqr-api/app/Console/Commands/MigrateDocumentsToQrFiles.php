@@ -152,7 +152,6 @@ class MigrateDocumentsToQrFiles extends Command
                         'qr_id' => $qrId,
                         'document_id' => $doc->document_id,
                         'folder_name' => $folderName,
-                        'emission_date' => $doc->emission_date ?? null,
                         'original_filename' => $doc->file_name ?? 'documento.pdf',
                         'file_path' => $filePath,
                         'qr_path' => $qrPath,

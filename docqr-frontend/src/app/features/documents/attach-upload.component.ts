@@ -124,20 +124,14 @@ export class AttachUploadComponent implements OnInit {
     if (input.files && input.files.length > 0) {
       this.handleFile(input.files[0]);
     }
-    input.value = '';
   }
 
   /**
    * Procesar archivo seleccionado
    */
   private handleFile(file: File): void {
-    // Validar tipo de archivo por MIME type o extensión.
-    const isValidPdf = file.type === 'application/pdf' ||
-      file.type === 'application/x-pdf' ||
-      file.type === 'application/octet-stream' ||
-      file.name.toLowerCase().endsWith('.pdf');
-
-    if (!isValidPdf) {
+    // Validar tipo de archivo
+    if (file.type !== 'application/pdf') {
       this.notificationService.showError('Solo se permiten archivos PDF');
       return;
     }
@@ -385,22 +379,19 @@ export class AttachUploadComponent implements OnInit {
     this.sidebarOpen = false;
   }
 
-  /**
-   * Formatear fecha de emisión para mostrar en UI
-   */
-  formatEmissionDate(date: string | null | undefined): string {
+  formatDate(date: string | null | undefined): string {
     if (!date) {
-      return 'Sin fecha de emisión';
+      return 'No registrada';
     }
 
-    return new Date(`${date}T00:00:00`).toLocaleDateString('es-ES');
+    return new Date(date).toLocaleDateString('es-ES');
   }
 
   /**
    * Guardar y finalizar - Volver a la lista de documentos
    */
   saveAndFinish(): void {
-    if (!this.document || !this.document.pdf_url) {
+    if (!this.document || !this.document.has_pdf) {
       this.notificationService.showWarning('Debes adjuntar un PDF primero');
       return;
     }
@@ -420,7 +411,7 @@ export class AttachUploadComponent implements OnInit {
    * Cancelar y volver a la lista sin guardar
    */
   cancelAndReturn(): void {
-    if (this.document && !this.document.pdf_url) {
+    if (this.document && !this.document.has_pdf) {
       // Si no se adjuntó PDF, advertir
       if (confirm('¿Estás seguro? El documento quedará sin PDF adjunto.')) {
         this.router.navigate(['/documents']);

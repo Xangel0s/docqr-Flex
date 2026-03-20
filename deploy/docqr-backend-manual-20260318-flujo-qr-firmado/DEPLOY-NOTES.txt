@@ -1,0 +1,9 @@
+Frontend:
+- Sube el contenido del zip al hosting del frontend y reemplaza el build Angular actual.
+
+Backend:
+- Reemplaza en Laravel los archivos incluidos en este paquete.
+- Luego ejecuta:
+  php artisan migrate --force
+  php artisan optimize:clear
+- Reinicia PHP-FPM/Apache/Nginx si aplica.

@@ -118,18 +118,18 @@
             }">Crear QR y Adjuntar PDF</p>
         </a>
 
-        <a
-          routerLink="/documents/bulk-upload"
+        <a 
+          routerLink="/bulk-upload" 
           routerLinkActive="bg-primary bg-opacity-10 text-primary font-semibold"
           (click)="navigateAndClose()"
           class="flex items-center gap-1.5 px-2 py-1 rounded-lg text-gray-600 hover:bg-primary hover:bg-opacity-10 hover:text-primary transition-colors cursor-pointer group relative"
-          [title]="isCollapsed ? 'Subida Masiva IN' : ''">
-          <span class="material-symbols-outlined text-base shrink-0">table_chart</span>
-          <p
+          [title]="isCollapsed ? 'Carga Masiva PDFs' : ''">
+          <span class="material-symbols-outlined text-base shrink-0">dynamic_feed</span>
+          <p 
             class="text-xs font-medium transition-all duration-300 overflow-hidden whitespace-nowrap"
             [ngClass]="{
               'w-0 opacity-0': isCollapsed
-            }">Subida Masiva IN</p>
+            }">Carga Masiva PDFs</p>
         </a>
 
         <a 
@@ -200,3 +200,4 @@
   (confirm)="confirmLogout()"
   (cancel)="cancelLogout()">
 </app-logout-confirm-modal>
+

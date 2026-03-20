@@ -158,7 +158,9 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-900 truncate">{{ doc.original_filename }}</p>
                 <p class="text-xs text-gray-500">{{ doc.folder_name }}</p>
-                <p class="text-xs text-gray-400">{{ formatEmissionDate(doc.emission_date) }}</p>
+                <p class="text-[11px] text-gray-400">
+                  Emision: {{ formatDate(doc.fecha_emision || null) }} · PDF: {{ doc.has_pdf ? 'Si' : 'No' }}
+                </p>
               </div>
               <div class="flex-shrink-0 text-right">
                 <p class="text-sm font-semibold text-gray-900">{{ formatNumber(doc.scan_count) }}</p>

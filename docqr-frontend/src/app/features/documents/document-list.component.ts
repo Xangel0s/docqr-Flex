@@ -12,6 +12,41 @@ import { DeleteConfirmModalComponent } from '../../shared/components/delete-conf
 import { EditOptionModalComponent, EditType } from '../../shared/components/edit-option-modal/edit-option-modal.component';
 import { EditFolderModalComponent } from '../../shared/components/edit-folder-modal/edit-folder-modal.component';
 
+interface CsvExportColumn {
+  key: string;
+  label: string;
+  description: string;
+  selected: boolean;
+}
+
+const DEFAULT_CSV_EXPORT_COLUMNS: ReadonlyArray<Omit<CsvExportColumn, 'selected'>> = [
+  { key: 'document_type', label: 'Tipo de Informe', description: 'Tipo derivado del codigo del documento' },
+  { key: 'pdf_name', label: 'Nombre del PDF', description: 'Nombre del archivo PDF cargado' },
+  { key: 'folder_name', label: 'Codigo del Ensayo', description: 'Codigo principal del documento' },
+  { key: 'qr_url', label: 'Link Enviado a Inacal', description: 'Link publico enviado o compartido' },
+  { key: 'redirect_url', label: 'Link Redireccionado', description: 'Destino final del PDF o vista del documento' },
+  { key: 'created_at', label: 'Fecha de Informe', description: 'Fecha y hora de registro del documento' },
+  { key: 'fecha_emision', label: 'Fecha de Emision', description: 'Fecha de emision reportada' },
+  { key: 'status', label: 'Estado del Documento', description: 'Estado actual del documento' },
+  { key: 'pdf_uploaded', label: 'PDF Subido', description: 'Indica si el documento ya tiene PDF' },
+  { key: 'qr_id', label: 'QR ID', description: 'Identificador interno del QR' },
+  { key: 'scan_count', label: 'Escaneos', description: 'Cantidad de escaneos registrados' },
+  { key: 'last_scanned_at', label: 'Ultimo Escaneo', description: 'Ultima fecha de escaneo detectada' },
+  { key: 'file_size', label: 'Tamano del Archivo', description: 'Tamano del PDF en formato legible' },
+];
+
+const INACAL_CSV_EXPORT_KEYS = new Set([
+  'document_type',
+  'pdf_name',
+  'folder_name',
+  'qr_url',
+  'redirect_url',
+  'created_at',
+  'fecha_emision',
+  'status',
+  'pdf_uploaded',
+]);
+
 /**
  * Componente para listar documentos
  */
@@ -28,6 +63,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   loading: boolean = true;
   searchTerm: string = '';
   currentPage: number = 1;
+  targetPage: number = 1; // Para el input de "Ir a página"
   totalPages: number = 1;
   totalDocuments: number = 0;
   stats = {
@@ -48,7 +84,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     sortBy: 'created_at',
     sortOrder: 'desc' as 'asc' | 'desc'
   };
-  
+
   activeFiltersCount: number = 0;
 
   // Modal de vista previa
@@ -70,21 +106,28 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
   // Estado de exportación CSV
   exportingCSV: boolean = false;
+  exportModalOpen: boolean = false;
+  exportColumns: CsvExportColumn[] = DEFAULT_CSV_EXPORT_COLUMNS.map(column => ({
+    ...column,
+    selected: INACAL_CSV_EXPORT_KEYS.has(column.key)
+  }));
 
   // Suscripción para detectar navegación
   private routerSubscription?: Subscription;
-  private documentsSubscription?: Subscription;
-  
+
   // Caché para evitar recargas innecesarias
   private lastLoadTime: number = 0;
   private readonly CACHE_DURATION = 5000; // 5 segundos
-  private lastQueryKey: string = '';
+
+  // Caché de páginas visitadas (LRU simple - guarda las últimas 5 páginas)
+  private pageCache = new Map<number, Document[]>();
+  private readonly MAX_CACHE_SIZE = 5;
 
   constructor(
     private docqrService: DocqrService,
     private notificationService: NotificationService,
     private router: Router
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     if (window.innerWidth >= 768) {
@@ -92,7 +135,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     }
     this.loadDocuments();
     this.loadStats();
-    
+
     // Recargar documentos cuando vuelves del editor
     this.routerSubscription = this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
@@ -107,45 +150,41 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     if (this.routerSubscription) {
       this.routerSubscription.unsubscribe();
     }
-    if (this.documentsSubscription) {
-      this.documentsSubscription.unsubscribe();
-    }
   }
 
   /**
    * Cargar documentos (con caché para evitar recargas innecesarias)
    */
   loadDocuments(force: boolean = false): void {
-    const queryKey = JSON.stringify({
-      search: this.searchTerm.trim(),
-      page: this.currentPage,
-      filters: this.filters
-    });
-
-    // Verificar caché: si se cargó hace menos de 5 segundos y no es forzado, no recargar
-    const now = Date.now();
-    if (
-      !force &&
-      queryKey === this.lastQueryKey &&
-      (now - this.lastLoadTime) < this.CACHE_DURATION &&
-      this.documents.length > 0
-    ) {
+    // Verificar caché de página si no es forzado
+    if (!force && this.pageCache.has(this.currentPage)) {
+      this.documents = this.pageCache.get(this.currentPage)!;
+      this.targetPage = this.currentPage; // Sincronizar input
+      this.loading = false;
       return;
     }
-    
+
+    // Verificar caché temporal general (solo si no cambiamos de página)
+    const now = Date.now();
+    if (!force && (now - this.lastLoadTime) < this.CACHE_DURATION && this.documents.length > 0) {
+      return;
+    }
+
     this.loading = true;
     this.updateActiveFiltersCount();
-    this.documentsSubscription?.unsubscribe();
 
-    this.documentsSubscription = this.docqrService.getDocuments(undefined, this.searchTerm, this.currentPage, this.filters).subscribe({
+    this.docqrService.getDocuments(undefined, this.searchTerm, this.currentPage, this.filters).subscribe({
       next: (response: DocumentsResponse) => {
         if (response.success) {
           this.documents = response.data;
           this.currentPage = response.meta.current_page;
+          this.targetPage = this.currentPage; // Sincronizar input
           this.totalPages = response.meta.last_page;
           this.totalDocuments = response.meta.total;
           this.lastLoadTime = Date.now(); // Actualizar tiempo de carga
-          this.lastQueryKey = queryKey;
+
+          // Guardar en caché de páginas
+          this.addToPageCache(this.currentPage, this.documents);
         } else {
           this.notificationService.showError('Error al cargar documentos');
         }
@@ -158,6 +197,28 @@ export class DocumentListComponent implements OnInit, OnDestroy {
         this.documents = [];
       }
     });
+  }
+
+  /**
+   * Agregar página al caché (LRU)
+   */
+  private addToPageCache(page: number, documents: Document[]): void {
+    if (this.pageCache.has(page)) {
+      this.pageCache.delete(page); // Mover al final (más reciente)
+    } else if (this.pageCache.size >= this.MAX_CACHE_SIZE) {
+      const firstKey = this.pageCache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.pageCache.delete(firstKey); // Eliminar el más antiguo
+      }
+    }
+    this.pageCache.set(page, [...documents]); // Guardar copia
+  }
+
+  /**
+   * Limpiar caché de páginas
+   */
+  private clearPageCache(): void {
+    this.pageCache.clear();
   }
 
   /**
@@ -182,10 +243,10 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       next: (response) => {
         if (response.success) {
           this.stats = {
-            total: response.data.total_documents,
-            totalScans: response.data.total_scans,
+            total: response.data.total_documents || 0,
+            totalScans: response.data.total_scans || 0,
             errors: 0,
-            pending: response.data.pending_documents
+            pending: response.data.pending_documents || 0
           };
         }
       },
@@ -200,7 +261,8 @@ export class DocumentListComponent implements OnInit, OnDestroy {
    */
   onSearch(): void {
     this.currentPage = 1;
-    this.loadDocuments();
+    this.clearPageCache(); // Limpiar caché al buscar
+    this.loadDocuments(true);
   }
 
   /**
@@ -215,7 +277,8 @@ export class DocumentListComponent implements OnInit, OnDestroy {
    */
   applyFilters(): void {
     this.currentPage = 1;
-    this.loadDocuments();
+    this.clearPageCache(); // Limpiar caché al filtrar
+    this.loadDocuments(true);
     this.showFilters = false;
   }
 
@@ -233,7 +296,8 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       sortOrder: 'desc'
     };
     this.currentPage = 1;
-    this.loadDocuments();
+    this.clearPageCache(); // Limpiar caché al limpiar filtros
+    this.loadDocuments(true);
   }
 
   /**
@@ -255,7 +319,8 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       this.filters.sortOrder = 'desc';
     }
     this.currentPage = 1;
-    this.loadDocuments();
+    this.clearPageCache(); // Limpiar caché al limpiar filtro
+    this.loadDocuments(true);
   }
 
   /**
@@ -268,24 +333,22 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       event.preventDefault();
       event.stopPropagation();
     }
-    
+
     // Obtener datos frescos del backend antes de abrir el modal
     this.docqrService.getDocumentByQrId(document.qr_id).subscribe({
       next: (response) => {
         if (response.success && response.data) {
           const freshDocument = response.data;
-          
-          // Priorizar PDF final con QR, luego PDF original
-          if (freshDocument.final_pdf_url) {
+
+          const previewUrl =
+            freshDocument.render_mode === 'overlay' && freshDocument.view_url
+              ? freshDocument.view_url
+              : (freshDocument.final_pdf_url || freshDocument.pdf_url);
+
+          if (previewUrl) {
             // Agregar cache buster para evitar problemas de caché
-            const separator = freshDocument.final_pdf_url.includes('?') ? '&' : '?';
-            this.previewPdfUrl = `${freshDocument.final_pdf_url}${separator}t=${Date.now()}`;
-            this.previewDocumentName = freshDocument.original_filename || 'Documento';
-            this.previewModalOpen = true;
-          } else if (freshDocument.pdf_url) {
-            // Agregar cache buster para evitar problemas de caché
-            const separator = freshDocument.pdf_url.includes('?') ? '&' : '?';
-            this.previewPdfUrl = `${freshDocument.pdf_url}${separator}t=${Date.now()}`;
+            const separator = previewUrl.includes('?') ? '&' : '?';
+            this.previewPdfUrl = `${previewUrl}${separator}t=${Date.now()}`;
             this.previewDocumentName = freshDocument.original_filename || 'Documento';
             this.previewModalOpen = true;
           } else {
@@ -298,10 +361,14 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Error al obtener documento:', error);
         // Fallback: usar datos del documento en caché si hay error
-        if (document.final_pdf_url || document.pdf_url) {
-          const pdfUrl = document.final_pdf_url || document.pdf_url;
-          const separator = pdfUrl.includes('?') ? '&' : '?';
-          this.previewPdfUrl = `${pdfUrl}${separator}t=${Date.now()}`;
+        const previewUrl =
+          document.render_mode === 'overlay' && document.view_url
+            ? document.view_url
+            : (document.final_pdf_url || document.pdf_url);
+
+        if (previewUrl) {
+          const separator = previewUrl.includes('?') ? '&' : '?';
+          this.previewPdfUrl = `${previewUrl}${separator}t=${Date.now()}`;
           this.previewDocumentName = document.original_filename || 'Documento';
           this.previewModalOpen = true;
         } else {
@@ -342,20 +409,21 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   onEditOptionSelected(editType: EditType): void {
     // Guardar referencia del documento antes de cerrar el modal
     const documentToEdit = this.documentToEdit;
-    
+
     if (!documentToEdit) {
       this.notificationService.showError('No hay documento seleccionado');
       this.editOptionModalOpen = false;
       return;
     }
-    
+
     // Cerrar modal de selección
     this.editOptionModalOpen = false;
-    
+
     if (editType === 'qr_position') {
-      // Si no tiene final_pdf_url, significa que es un documento adjunto
-      const isAttachedDocument = !documentToEdit.final_pdf_url;
-      
+      const isAttachedDocument = !documentToEdit.final_pdf_url
+        && documentToEdit.render_mode !== 'overlay'
+        && documentToEdit.status !== 'completed';
+
       if (isAttachedDocument) {
         // Documento adjunto: ir a la vista de adjuntar
         this.router.navigate(['/documents/attach', documentToEdit.qr_id, 'upload']);
@@ -430,7 +498,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
    */
   copyLink(document: Document): void {
     const url = document.qr_url || '';
-    
+
     if (!url) {
       this.notificationService.showError('No hay enlace disponible para copiar');
       return;
@@ -462,7 +530,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     window.document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    
+
     try {
       const successful = window.document.execCommand('copy');
       if (successful) {
@@ -488,7 +556,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
         if (response.success && response.data) {
           const updatedDoc = response.data;
           const pdfUrl = updatedDoc.final_pdf_url || updatedDoc.pdf_url;
-          
+
           if (!pdfUrl) {
             this.notificationService.showWarning('No hay PDF disponible para descargar');
             return;
@@ -497,7 +565,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
           try {
             // Agregar timestamp para evitar caché del navegador
             const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
-            
+
             fetch(urlWithCacheBuster)
               .then(response => {
                 if (!response.ok) {
@@ -515,13 +583,13 @@ export class DocumentListComponent implements OnInit, OnDestroy {
                 link.click();
                 window.document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
-                
+
                 // Actualizar el documento en la lista local
                 const index = this.documents.findIndex(d => d.id === doc.id);
                 if (index !== -1) {
                   this.documents[index] = updatedDoc;
                 }
-                
+
                 this.notificationService.showSuccess('✅ PDF descargado exitosamente');
               })
               .catch(error => {
@@ -539,7 +607,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
             this.notificationService.showWarning('No hay PDF disponible para descargar');
             return;
           }
-          
+
           const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
           fetch(urlWithCacheBuster)
             .then(response => {
@@ -574,7 +642,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
           this.notificationService.showWarning('No hay PDF disponible para descargar');
           return;
         }
-        
+
         // Usar fetch con blob para forzar la descarga
         const urlWithCacheBuster = `${pdfUrl}?t=${Date.now()}`;
         fetch(urlWithCacheBuster)
@@ -687,26 +755,42 @@ export class DocumentListComponent implements OnInit, OnDestroy {
   changePage(page: number): void {
     if (page >= 1 && page <= this.totalPages) {
       this.currentPage = page;
-      this.loadDocuments();
+      this.loadDocuments(false); // Usar caché si está disponible
+    }
+  }
+
+  /**
+   * Ir a una página específica desde el input
+   */
+  goToPage(): void {
+    if (!this.targetPage || this.targetPage < 1) {
+      this.targetPage = 1;
+    } else if (this.targetPage > this.totalPages) {
+      this.targetPage = this.totalPages;
+    }
+
+    if (this.targetPage !== this.currentPage) {
+      this.changePage(this.targetPage);
     }
   }
 
   /**
    * Formatear fecha
    */
-  formatDate(date: string): string {
+  formatDate(date: string | null | undefined): string {
+    if (!date) {
+      return 'No registrada';
+    }
+
     return new Date(date).toLocaleDateString('es-ES');
   }
 
-  /**
-   * Formatear fecha de emisión
-   */
-  formatEmissionDate(date: string | null): string {
+  formatDateTime(date: string | null | undefined): string {
     if (!date) {
-      return 'Sin fecha de emisión';
+      return 'N/A';
     }
 
-    return new Date(`${date}T00:00:00`).toLocaleDateString('es-ES');
+    return new Date(date).toLocaleString('es-ES');
   }
 
   /**
@@ -728,6 +812,167 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     return 'Otro';
   }
 
+  getDocumentStatusLabel(status: string | null | undefined): string {
+    switch (status) {
+      case 'completed':
+        return 'Completado';
+      case 'uploaded':
+        return 'Subido';
+      case 'pending':
+        return 'Pendiente';
+      case 'failed':
+        return 'Fallido';
+      default:
+        return status || 'Sin estado';
+    }
+  }
+
+  hasPdfUploaded(doc: Document): boolean {
+    if (typeof doc.has_pdf === 'boolean') {
+      return doc.has_pdf;
+    }
+
+    return Boolean(doc.original_filename || doc.pdf_url || doc.final_pdf_url);
+  }
+
+  openExportModal(): void {
+    if (this.loading || this.documents.length === 0 || this.exportingCSV) {
+      return;
+    }
+
+    this.exportModalOpen = true;
+  }
+
+  closeExportModal(): void {
+    if (this.exportingCSV) {
+      return;
+    }
+
+    this.exportModalOpen = false;
+  }
+
+  get selectedExportColumns(): CsvExportColumn[] {
+    return this.exportColumns.filter(column => column.selected);
+  }
+
+  applyExportPreset(preset: 'inacal' | 'all' | 'minimal'): void {
+    const minimalKeys = new Set(['document_type', 'pdf_name', 'folder_name', 'fecha_emision', 'pdf_uploaded']);
+
+    this.exportColumns = this.exportColumns.map(column => ({
+      ...column,
+      selected:
+        preset === 'all'
+          ? true
+          : preset === 'minimal'
+            ? minimalKeys.has(column.key)
+            : INACAL_CSV_EXPORT_KEYS.has(column.key)
+    }));
+  }
+
+  toggleAllExportColumns(checked: boolean): void {
+    this.exportColumns = this.exportColumns.map(column => ({
+      ...column,
+      selected: checked
+    }));
+  }
+
+  confirmExportToCSV(): void {
+    if (this.exportingCSV) {
+      return;
+    }
+
+    if (this.selectedExportColumns.length === 0) {
+      this.notificationService.showWarning('Selecciona al menos una columna para exportar');
+      return;
+    }
+
+    this.exportingCSV = true;
+    this.notificationService.showInfo('Generando archivo CSV... Esto puede tomar unos momentos.');
+
+    this.docqrService.getAllDocumentsForExport(this.searchTerm, this.filters).subscribe({
+      next: (response: DocumentsResponse) => {
+        if (response.success && response.data.length > 0) {
+          try {
+            this.generateConfiguredCSV(response.data, this.selectedExportColumns);
+            this.exportModalOpen = false;
+            this.notificationService.showSuccess(`CSV exportado exitosamente con ${response.data.length} documentos`);
+          } catch (error) {
+            console.error('Error al generar CSV:', error);
+            this.notificationService.showError('Error al generar el archivo CSV');
+          } finally {
+            this.exportingCSV = false;
+          }
+        } else {
+          this.notificationService.showWarning('No hay documentos para exportar');
+          this.exportingCSV = false;
+        }
+      },
+      error: (error) => {
+        console.error('Error al obtener documentos para exportar:', error);
+        this.notificationService.showError('Error al generar el archivo CSV');
+        this.exportingCSV = false;
+      }
+    });
+  }
+
+  private getExportColumnValue(doc: Document, key: string): string {
+    switch (key) {
+      case 'document_type':
+        return this.getDocumentType(doc.folder_name);
+      case 'pdf_name':
+        return doc.original_filename || 'No disponible';
+      case 'folder_name':
+        return doc.folder_name || '';
+      case 'qr_url':
+        return doc.qr_url || '';
+      case 'redirect_url':
+        return doc.final_pdf_url || doc.pdf_url || '';
+      case 'created_at':
+        return this.formatDateTime(doc.created_at);
+      case 'fecha_emision':
+        return this.formatDate(doc.fecha_emision);
+      case 'status':
+        return this.getDocumentStatusLabel(doc.status);
+      case 'pdf_uploaded':
+        return this.hasPdfUploaded(doc) ? 'Si' : 'No';
+      case 'qr_id':
+        return doc.qr_id || '';
+      case 'scan_count':
+        return (doc.scan_count ?? 0).toString();
+      case 'last_scanned_at':
+        return this.formatDateTime(doc.last_scanned_at);
+      case 'file_size':
+        return this.formatFileSize(doc.file_size || 0);
+      default:
+        return '';
+    }
+  }
+
+  private generateConfiguredCSV(documents: Document[], columns: CsvExportColumn[]): void {
+    const separator = ';';
+    const headers = columns.map(column => this.escapeCSV(column.label, separator));
+    const rows = documents.map(doc =>
+      columns.map(column => this.escapeCSV(this.getExportColumnValue(doc, column.key), separator))
+    );
+
+    const csvContent = [
+      headers.join(separator),
+      ...rows.map(row => row.join(separator))
+    ].join('\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `documentos_geofal_${new Date().toISOString().split('T')[0]}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  }
+
   onToggleSidebar(): void {
     this.sidebarOpen = !this.sidebarOpen;
   }
@@ -746,7 +991,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
 
     this.exportingCSV = true;
     this.notificationService.showInfo('Generando archivo CSV... Esto puede tomar unos momentos.');
-    
+
     // Obtener TODOS los documentos sin paginación para exportar
     this.docqrService.getAllDocumentsForExport(this.searchTerm, this.filters).subscribe({
       next: (response: DocumentsResponse) => {
@@ -790,7 +1035,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       'Estado',
       'Escaneos',
       'Último Escaneo',
-      'Fecha de Emisión',
       'Fecha de Creación',
       'URL QR',
       'URL PDF',
@@ -804,8 +1048,7 @@ export class DocumentListComponent implements OnInit, OnDestroy {
       const tipo = this.getDocumentType(doc.folder_name);
       const fechaCreacion = doc.created_at ? new Date(doc.created_at).toLocaleString('es-ES') : 'N/A';
       const ultimoEscaneo = doc.last_scanned_at ? new Date(doc.last_scanned_at).toLocaleString('es-ES') : 'N/A';
-      const fechaEmision = doc.emission_date ? new Date(`${doc.emission_date}T00:00:00`).toLocaleDateString('es-ES') : 'Sin fecha de emisión';
-      
+
       return [
         doc.id.toString(),
         doc.qr_id,
@@ -817,7 +1060,6 @@ export class DocumentListComponent implements OnInit, OnDestroy {
         doc.status,
         doc.scan_count.toString(),
         ultimoEscaneo,
-        fechaEmision,
         fechaCreacion,
         doc.qr_url || '',
         doc.pdf_url || '',
@@ -834,16 +1076,16 @@ export class DocumentListComponent implements OnInit, OnDestroy {
     // Agregar BOM para UTF-8 (Excel lo reconoce mejor)
     const BOM = '\uFEFF';
     const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    
+
     // Crear enlace de descarga
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    
+
     // Nombre del archivo con fecha
     const fecha = new Date().toISOString().split('T')[0];
     link.download = `documentos_geofal_${fecha}.csv`;
-    
+
     // Descargar
     document.body.appendChild(link);
     link.click();
@@ -856,11 +1098,11 @@ export class DocumentListComponent implements OnInit, OnDestroy {
    */
   private escapeCSV(value: string, separator: string = ';'): string {
     if (!value) return '';
-    
+
     if (value.includes(separator) || value.includes('"') || value.includes('\n') || value.includes('\r')) {
       return `"${value.replace(/"/g, '""')}"`;
     }
-    
+
     return value;
   }
 }

@@ -1,7 +1,5 @@
 <div class="min-h-screen bg-background-light flex">
-  <app-sidebar 
-    [isOpen]="sidebarOpen"
-    (closeSidebar)="onCloseSidebar()">
+  <app-sidebar [isOpen]="sidebarOpen" (closeSidebar)="onCloseSidebar()">
   </app-sidebar>
 
   <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -52,36 +50,28 @@
       <div class="bg-white rounded-xl shadow-sm">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 p-6">
           <div class="relative w-full md:w-72">
-            <input 
-              [(ngModel)]="searchTerm"
-              (keyup.enter)="onSearch()"
-              class="w-full rounded-lg border border-gray-300 bg-gray-50 h-11 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" 
-              placeholder="Buscar por código o nombre de archivo..." 
-              type="text"/>
+            <input [(ngModel)]="searchTerm" (keyup.enter)="onSearch()"
+              class="w-full rounded-lg border border-gray-300 bg-gray-50 h-11 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder="Buscar por código o nombre de archivo..." type="text" />
             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
           </div>
           <div class="flex items-center gap-3">
-            <button 
-              type="button"
-              (click)="exportToCSV()"
-              [disabled]="loading || documents.length === 0 || exportingCSV"
+            <button type="button" (click)="openExportModal()" [disabled]="loading || documents.length === 0 || exportingCSV"
               class="flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-green-500 bg-white text-green-600 text-sm font-semibold hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               <span *ngIf="!exportingCSV" class="material-symbols-outlined">download</span>
               <span *ngIf="exportingCSV" class="material-symbols-outlined animate-spin">sync</span>
               <span>{{ exportingCSV ? 'Generando...' : 'Exportar CSV' }}</span>
             </button>
-            <button 
-              type="button"
-              (click)="onFilter()"
+            <button type="button" (click)="onFilter()"
               class="relative flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-gray-300 bg-white text-sm font-semibold hover:bg-gray-50 transition-colors">
               <span class="material-symbols-outlined">filter_list</span>
               <span>Filtrar</span>
-              <span *ngIf="activeFiltersCount > 0" class="absolute -top-1 -right-1 h-5 w-5 bg-primary text-white text-xs font-bold rounded-full flex items-center justify-center">
+              <span *ngIf="activeFiltersCount > 0"
+                class="absolute -top-1 -right-1 h-5 w-5 bg-primary text-white text-xs font-bold rounded-full flex items-center justify-center">
                 {{ activeFiltersCount }}
               </span>
             </button>
-            <button 
-              routerLink="/upload"
+            <button routerLink="/upload"
               class="flex items-center justify-center gap-2 h-11 px-4 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors">
               <span class="material-symbols-outlined">add</span>
               <span>Nuevo Documento</span>
@@ -95,8 +85,7 @@
             <!-- Filtro por Tipo -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Documento</label>
-              <select 
-                [(ngModel)]="filters.type"
+              <select [(ngModel)]="filters.type"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
                 <option value="all">Todos</option>
                 <option value="CE">Certificado (CE)</option>
@@ -108,8 +97,7 @@
             <!-- Filtro por Estado -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Estado</label>
-              <select 
-                [(ngModel)]="filters.status"
+              <select [(ngModel)]="filters.status"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
                 <option value="all">Todos</option>
                 <option value="completed">Completados</option>
@@ -120,8 +108,7 @@
             <!-- Filtro por Escaneos -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Escaneos</label>
-              <select 
-                [(ngModel)]="filters.scansFilter"
+              <select [(ngModel)]="filters.scansFilter"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
                 <option value="all">Todos</option>
                 <option value="none">Sin escaneos</option>
@@ -132,29 +119,25 @@
             <!-- Filtro por Fecha Desde -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Fecha Desde</label>
-              <input 
-                type="date"
-                [(ngModel)]="filters.dateFrom"
+              <input type="date" [(ngModel)]="filters.dateFrom"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
             </div>
 
             <!-- Filtro por Fecha Hasta -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Fecha Hasta</label>
-              <input 
-                type="date"
-                [(ngModel)]="filters.dateTo"
+              <input type="date" [(ngModel)]="filters.dateTo"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
             </div>
 
             <!-- Ordenamiento -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Ordenar por</label>
-              <select 
-                [(ngModel)]="filters.sortBy"
+              <select [(ngModel)]="filters.sortBy"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary">
                 <option value="created_at">Fecha de Creación</option>
                 <option value="original_filename">Nombre de Archivo</option>
+                <option value="fecha_emision">Fecha de Emision</option>
                 <option value="scan_count">Cantidad de Escaneos</option>
                 <option value="folder_name">Código</option>
               </select>
@@ -165,21 +148,14 @@
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-2">Orden</label>
             <div class="flex gap-2">
-              <button 
-                type="button"
-                (click)="filters.sortOrder = 'desc'"
-                [class.bg-primary]="filters.sortOrder === 'desc'"
-                [class.text-white]="filters.sortOrder === 'desc'"
+              <button type="button" (click)="filters.sortOrder = 'desc'"
+                [class.bg-primary]="filters.sortOrder === 'desc'" [class.text-white]="filters.sortOrder === 'desc'"
                 [class.bg-gray-200]="filters.sortOrder !== 'desc'"
                 class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 Descendente
               </button>
-              <button 
-                type="button"
-                (click)="filters.sortOrder = 'asc'"
-                [class.bg-primary]="filters.sortOrder === 'asc'"
-                [class.text-white]="filters.sortOrder === 'asc'"
-                [class.bg-gray-200]="filters.sortOrder !== 'asc'"
+              <button type="button" (click)="filters.sortOrder = 'asc'" [class.bg-primary]="filters.sortOrder === 'asc'"
+                [class.text-white]="filters.sortOrder === 'asc'" [class.bg-gray-200]="filters.sortOrder !== 'asc'"
                 class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 Ascendente
               </button>
@@ -188,22 +164,15 @@
 
           <!-- Botones de Acción -->
           <div class="flex items-center justify-between pt-4 border-t border-gray-200">
-            <button 
-              type="button"
-              (click)="clearFilters()"
-              class="text-sm text-gray-600 hover:text-gray-900 underline">
+            <button type="button" (click)="clearFilters()" class="text-sm text-gray-600 hover:text-gray-900 underline">
               Limpiar todos los filtros
             </button>
             <div class="flex gap-3">
-              <button 
-                type="button"
-                (click)="showFilters = false"
+              <button type="button" (click)="showFilters = false"
                 class="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium hover:bg-gray-50">
                 Cancelar
               </button>
-              <button 
-                type="button"
-                (click)="applyFilters()"
+              <button type="button" (click)="applyFilters()"
                 class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90">
                 Aplicar Filtros
               </button>
@@ -213,74 +182,76 @@
 
         <!-- Chips de Filtros Activos -->
         <div *ngIf="activeFiltersCount > 0 && !showFilters" class="px-6 pt-4 pb-2 flex flex-wrap gap-2">
-          <span 
-            *ngIf="filters.type !== 'all'"
+          <span *ngIf="filters.type !== 'all'"
             class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
             Tipo: {{ filters.type === 'CE' ? 'Certificado' : filters.type === 'IN' ? 'Informe' : 'Suplemento' }}
-            <button type="button" (click)="clearFilter('type')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+            <button type="button" (click)="clearFilter('type')"
+              class="hover:bg-primary hover:text-white rounded-full p-0.5">
               <span class="material-symbols-outlined text-xs">close</span>
             </button>
           </span>
-          <span 
-            *ngIf="filters.status !== 'all'"
+          <span *ngIf="filters.status !== 'all'"
             class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
             Estado: {{ filters.status === 'completed' ? 'Completados' : 'Pendientes' }}
-            <button type="button" (click)="clearFilter('status')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+            <button type="button" (click)="clearFilter('status')"
+              class="hover:bg-primary hover:text-white rounded-full p-0.5">
               <span class="material-symbols-outlined text-xs">close</span>
             </button>
           </span>
-          <span 
-            *ngIf="filters.scansFilter !== 'all'"
+          <span *ngIf="filters.scansFilter !== 'all'"
             class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
             Escaneos: {{ filters.scansFilter === 'none' ? 'Sin escaneos' : 'Con escaneos' }}
-            <button type="button" (click)="clearFilter('scansFilter')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+            <button type="button" (click)="clearFilter('scansFilter')"
+              class="hover:bg-primary hover:text-white rounded-full p-0.5">
               <span class="material-symbols-outlined text-xs">close</span>
             </button>
           </span>
-          <span 
-            *ngIf="filters.dateFrom"
+          <span *ngIf="filters.dateFrom"
             class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
             Desde: {{ filters.dateFrom }}
-            <button type="button" (click)="clearFilter('dateFrom')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+            <button type="button" (click)="clearFilter('dateFrom')"
+              class="hover:bg-primary hover:text-white rounded-full p-0.5">
               <span class="material-symbols-outlined text-xs">close</span>
             </button>
           </span>
-          <span 
-            *ngIf="filters.dateTo"
+          <span *ngIf="filters.dateTo"
             class="inline-flex items-center gap-1 px-3 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
             Hasta: {{ filters.dateTo }}
-            <button type="button" (click)="clearFilter('dateTo')" class="hover:bg-primary hover:text-white rounded-full p-0.5">
+            <button type="button" (click)="clearFilter('dateTo')"
+              class="hover:bg-primary hover:text-white rounded-full p-0.5">
               <span class="material-symbols-outlined text-xs">close</span>
             </button>
           </span>
         </div>
 
-        <div class="overflow-x-auto">
+        <div class="relative overflow-x-auto min-h-[300px]">
+          <!-- Loading Overlay -->
+          <div *ngIf="loading"
+            class="absolute inset-0 bg-white/80 z-10 flex items-center justify-center backdrop-blur-[1px]">
+            <div class="flex flex-col items-center gap-3">
+              <span class="material-symbols-outlined text-4xl text-primary animate-spin">sync</span>
+              <span class="text-sm font-medium text-gray-500">Cargando documentos...</span>
+            </div>
+          </div>
+
           <table class="w-full text-sm text-left">
             <thead class="text-xs text-gray-500 uppercase bg-gray-50">
               <tr>
                 <th class="p-4 rounded-l-lg" scope="col">Acción</th>
                 <th class="p-4" scope="col">Tipo Documento</th>
                 <th class="p-4" scope="col">Código</th>
+                <th class="p-4" scope="col">Fecha Emision</th>
                 <th class="p-4" scope="col">Nombre Archivo Original</th>
-                <th class="p-4" scope="col">Fecha de emisión</th>
                 <th class="p-4" scope="col">Usuario Creación</th>
                 <th class="p-4 rounded-r-lg" scope="col">Fecha Creación</th>
               </tr>
             </thead>
             <tbody>
-              <tr *ngIf="loading">
-                <td colspan="7" class="p-8 text-center text-gray-500">
-                  Cargando documentos...
-                </td>
-              </tr>
+              <!-- Loading row removed, using overlay instead -->
               <tr *ngIf="!loading && documents.length === 0">
                 <td colspan="7" class="p-8 text-center text-gray-500">
-                  No hay documentos aún. 
-                  <button 
-                    type="button"
-                    routerLink="/upload"
-                    class="text-primary hover:underline font-medium ml-1">
+                  No hay documentos aún.
+                  <button type="button" routerLink="/upload" class="text-primary hover:underline font-medium ml-1">
                     Sube tu primer documento
                   </button>
                 </td>
@@ -288,38 +259,24 @@
               <tr *ngFor="let doc of documents" class="border-b border-gray-200 hover:bg-gray-50">
                 <td class="p-4">
                   <div class="flex items-center gap-2">
-                    <button 
-                      type="button"
-                      (click)="viewDocument(doc, $event)"
-                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
-                      title="Ver documento">
+                    <button type="button" (click)="viewDocument(doc, $event)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors" title="Ver documento">
                       <span class="material-symbols-outlined text-gray-600 text-lg">visibility</span>
                     </button>
-                    <button 
-                      type="button"
-                      (click)="editDocument(doc)"
-                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
-                      title="Editar documento">
+                    <button type="button" (click)="editDocument(doc)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors" title="Editar documento">
                       <span class="material-symbols-outlined text-gray-600 text-lg">edit</span>
                     </button>
-                    <button 
-                      type="button"
-                      (click)="copyLink(doc)"
-                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors"
-                      title="Copiar enlace del QR">
+                    <button type="button" (click)="copyLink(doc)"
+                      class="p-1.5 rounded-md hover:bg-gray-200 transition-colors" title="Copiar enlace del QR">
                       <span class="material-symbols-outlined text-gray-600 text-lg">link</span>
                     </button>
-                    <button 
-                      *ngIf="doc.final_pdf_url || doc.pdf_url"
-                      type="button"
-                      (click)="downloadDocument(doc)"
+                    <button *ngIf="hasPdfUploaded(doc)" type="button" (click)="downloadDocument(doc)"
                       class="p-1.5 rounded-md hover:bg-blue-100 hover:text-blue-600 transition-colors"
                       title="Descargar PDF">
                       <span class="material-symbols-outlined text-blue-600 text-lg">download</span>
                     </button>
-                    <button 
-                      type="button"
-                      (click)="openDeleteModal(doc)"
+                    <button type="button" (click)="openDeleteModal(doc)"
                       class="p-1.5 rounded-md hover:bg-red-100 hover:text-red-600 transition-all active:scale-95"
                       title="Eliminar documento">
                       <span class="material-symbols-outlined text-red-600 text-lg">delete</span>
@@ -328,8 +285,8 @@
                 </td>
                 <td class="p-4 text-gray-500">{{ getDocumentType(doc.folder_name) }}</td>
                 <td class="p-4 font-semibold text-gray-900">{{ doc.folder_name }}</td>
+                <td class="p-4 text-gray-500">{{ formatDate(doc.fecha_emision) }}</td>
                 <td class="p-4 text-gray-500">{{ doc.original_filename }}</td>
-                <td class="p-4 text-gray-500">{{ formatEmissionDate(doc.emission_date) }}</td>
                 <td class="p-4 text-gray-500">Administrador</td>
                 <td class="p-4 text-gray-500">{{ formatDate(doc.created_at) }}</td>
               </tr>
@@ -341,21 +298,24 @@
             Mostrando {{ documents.length }} de {{ totalDocuments }}
           </span>
           <div class="flex items-center gap-2">
-            <button 
-              type="button"
-              (click)="changePage(currentPage - 1)"
-              [disabled]="currentPage === 1"
-              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="button" (click)="changePage(currentPage - 1)" [disabled]="currentPage === 1 || loading"
+              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
               Anterior
             </button>
-            <span class="px-3 py-1.5 text-gray-700">
-              Página {{ currentPage }} de {{ totalPages }}
+            <span class="px-3 py-1.5 text-gray-700 flex items-center gap-2">
+              <span>Página</span>
+              <input type="number" [(ngModel)]="targetPage" (keyup.enter)="goToPage()" [disabled]="loading" min="1"
+                [max]="totalPages"
+                class="w-16 h-8 text-center border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary disabled:bg-gray-100">
+              <span>de {{ totalPages }}</span>
+              <button type="button" (click)="goToPage()" [disabled]="loading"
+                class="ml-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 text-gray-600 disabled:opacity-50">
+                Ir
+              </button>
             </span>
-            <button 
-              type="button"
-              (click)="changePage(currentPage + 1)"
-              [disabled]="currentPage === totalPages"
-              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="button" (click)="changePage(currentPage + 1)"
+              [disabled]="currentPage === totalPages || loading"
+              class="px-3 py-1.5 rounded-md border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
               Siguiente
             </button>
           </div>
@@ -365,36 +325,93 @@
   </div>
 
   <!-- Modal de Vista Previa del PDF -->
-  <app-pdf-preview-modal
-    [isOpen]="previewModalOpen"
-    [pdfUrl]="previewPdfUrl"
-    [documentName]="previewDocumentName"
+  <app-pdf-preview-modal [isOpen]="previewModalOpen" [pdfUrl]="previewPdfUrl" [documentName]="previewDocumentName"
     (close)="closePreviewModal()">
   </app-pdf-preview-modal>
 
   <!-- Modal de confirmación de eliminación -->
-  <app-delete-confirm-modal
-    [isOpen]="deleteModalOpen"
-    [documentName]="documentToDelete?.original_filename || ''"
-    [documentType]="documentToDelete ? getDocumentType(documentToDelete.folder_name) : ''"
-    (confirm)="confirmDelete()"
+  <app-delete-confirm-modal [isOpen]="deleteModalOpen" [documentName]="documentToDelete?.original_filename || ''"
+    [documentType]="documentToDelete ? getDocumentType(documentToDelete.folder_name) : ''" (confirm)="confirmDelete()"
     (cancel)="closeDeleteModal()">
   </app-delete-confirm-modal>
 
   <!-- Modal de selección de tipo de edición -->
-  <app-edit-option-modal
-    [isOpen]="editOptionModalOpen"
-    [documentName]="documentToEdit?.original_filename || ''"
-    (selectOption)="onEditOptionSelected($event)"
-    (cancel)="closeEditOptionModal()">
+  <app-edit-option-modal [isOpen]="editOptionModalOpen" [documentName]="documentToEdit?.original_filename || ''"
+    (selectOption)="onEditOptionSelected($event)" (cancel)="closeEditOptionModal()">
   </app-edit-option-modal>
 
   <!-- Modal de edición de nombre de carpeta -->
-  <app-edit-folder-modal
-    [isOpen]="editFolderModalOpen"
-    [currentFolderName]="documentToEdit?.folder_name || ''"
-    [documentName]="documentToEdit?.original_filename || ''"
-    (save)="saveFolderName($event)"
+  <app-edit-folder-modal [isOpen]="editFolderModalOpen" [currentFolderName]="documentToEdit?.folder_name || ''"
+    [documentName]="documentToEdit?.original_filename || ''" (save)="saveFolderName($event)"
     (cancel)="closeEditFolderModal()">
   </app-edit-folder-modal>
+
+  <div *ngIf="exportModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 md:p-4" (click)="closeExportModal()">
+    <div class="flex max-h-[92vh] w-[min(96vw,1180px)] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200" (click)="$event.stopPropagation()">
+      <div class="flex items-start justify-between gap-4 border-b border-gray-200 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.12),_transparent_40%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] px-5 py-5 md:px-6">
+        <div>
+          <h3 class="text-xl font-bold text-gray-900">Exportar CSV por columnas</h3>
+          <p class="mt-1 text-sm text-gray-500">
+            Elige las columnas del CSV estilo Inacal. Se agregan fecha de emision y estado del PDF.
+          </p>
+        </div>
+        <button type="button" (click)="closeExportModal()" [disabled]="exportingCSV" class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="border-b border-gray-200 px-5 py-4 md:px-6">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" (click)="applyExportPreset('inacal')" class="rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
+              Preset Inacal
+            </button>
+            <button type="button" (click)="applyExportPreset('minimal')" class="rounded-xl border border-blue-300 bg-blue-50 px-3.5 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">
+              Preset Minimo
+            </button>
+            <button type="button" (click)="applyExportPreset('all')" class="rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Seleccionar Todo
+            </button>
+            <button type="button" (click)="toggleAllExportColumns(false)" class="rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Limpiar
+            </button>
+          </div>
+          <div class="inline-flex w-fit items-center rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600">
+            {{ selectedExportColumns.length }} columna(s) seleccionada(s)
+          </div>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-2">
+          <label *ngFor="let column of exportColumns" class="flex cursor-pointer items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5">
+            <input
+              type="checkbox"
+              [(ngModel)]="column.selected"
+              class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary">
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-gray-900">{{ column.label }}</span>
+              <span class="mt-1 block text-xs leading-5 text-gray-500">{{ column.description }}</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3 border-t border-gray-200 bg-white px-5 py-5 md:px-6 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-gray-500">
+          El CSV se descargara con separador <strong>;</strong> para abrirlo directo en Excel.
+        </p>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <button type="button" (click)="closeExportModal()" [disabled]="exportingCSV" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            Cancelar
+          </button>
+          <button type="button" (click)="confirmExportToCSV()" [disabled]="exportingCSV || selectedExportColumns.length === 0" class="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">
+            <span *ngIf="!exportingCSV" class="material-symbols-outlined">download</span>
+            <span *ngIf="exportingCSV" class="material-symbols-outlined animate-spin">sync</span>
+            <span>{{ exportingCSV ? 'Generando...' : 'Descargar CSV' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>

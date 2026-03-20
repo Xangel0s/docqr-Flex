@@ -23,14 +23,11 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Permitir autenticación por username o por email.
-            $credential = trim((string) $request->username);
-
-            $user = User::select(['id', 'username', 'name', 'email', 'password', 'role', 'is_active'])
-                ->where(function ($query) use ($credential) {
-                    $query->where('username', $credential)
-                        ->orWhere('email', $credential);
-                })
+            // 1. CORRECCIÓN CRÍTICA: Buscamos por EMAIL, no por username.
+            // Asumimos que el usuario escribe su correo en el campo de usuario.
+            // Quitamos 'username' del select porque esa columna NO existe en DB.
+            $user = User::select(['id', 'name', 'email', 'password', 'role', 'is_active'])
+                ->where('email', $request->username) // <--- Aquí está el truco: mapeamos username -> email
                 ->first();
 
             // Verificamos si el usuario existe y está activo
@@ -62,10 +59,10 @@ class AuthController extends Controller
                 'data' => [
                     'user' => [
                         'id' => $user->id,
-                        'username' => $user->username,
                         'name' => $user->name,
                         'email' => $user->email,
                         'role' => $user->role,
+                        // 'username' => $user->username, // <--- ELIMINADO PARA EVITAR ERROR
                     ],
                     // 'token' => $token // Descomenta si usas tokens
                 ]
@@ -103,10 +100,10 @@ class AuthController extends Controller
                 'data' => [
                     'user' => [
                         'id' => $user->id,
-                        'username' => $user->username,
                         'name' => $user->name,
                         'email' => $user->email,
                         'role' => $user->role,
+                        // 'username' eliminado
                     ]
                 ]
             ], 200);

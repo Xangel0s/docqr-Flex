@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\QrFile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -21,7 +20,7 @@ class ViewController extends Controller
      * @param string $hash QR ID del documento
      * @return Response
      */
-    public function view(string $hash): Response
+    public function view(Request $request, string $hash): Response
     {
         try {
             // Validar qr_id contra inyección SQL
@@ -57,7 +56,10 @@ class ViewController extends Controller
             $disk = $pdfInfo['disk'];
             $fullPath = $pdfInfo['fullPath'];
             $pdfType = $pdfInfo['type'];
-            
+
+            if ($this->shouldRenderOverlayViewer($qrFile, $pdfInfo) && $request->query('raw') !== '1') {
+                return $this->renderOverlayViewer($qrFile, $request);
+            }
 
             // Leer el contenido del archivo
             $content = file_get_contents($fullPath);
@@ -252,6 +254,35 @@ class ViewController extends Controller
         
         // 3. Fallback: limpiar todo excepto letras y números
         return preg_replace('/[^A-Z0-9]/i', '', $clean);
+    }
+
+    private function shouldRenderOverlayViewer(QrFile $qrFile, array $pdfInfo): bool
+    {
+        return !empty($qrFile->qr_position)
+            && $qrFile->status === 'completed'
+            && (($pdfInfo['type'] ?? null) !== 'final');
+    }
+
+    private function renderOverlayViewer(QrFile $qrFile, Request $request): Response
+    {
+        $position = is_array($qrFile->qr_position) ? $qrFile->qr_position : [];
+        $position['page_number'] = max(1, (int) ($position['page_number'] ?? 1));
+
+        $html = view('pdf-overlay-viewer', [
+            'documentName' => $qrFile->original_filename ?: $qrFile->folder_name ?: 'Documento',
+            'folderName' => $qrFile->folder_name,
+            'pdfUrl' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$qrFile->qr_id}", $request),
+            'downloadUrl' => \App\Helpers\UrlHelper::url("/api/files/pdf-original/{$qrFile->qr_id}", $request),
+            'qrImageUrl' => \App\Helpers\UrlHelper::url("/api/files/qr/{$qrFile->qr_id}", $request),
+            'qrPosition' => $position,
+        ])->render();
+
+        return response($html, 200)
+            ->header('Content-Type', 'text/html; charset=UTF-8')
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0')
+            ->header('X-Content-Type-Options', 'nosniff');
     }
 
     /**

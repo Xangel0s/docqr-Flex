@@ -1,0 +1,521 @@
+<div class="min-h-screen bg-background-light flex">
+  <app-sidebar [isOpen]="sidebarOpen" (closeSidebar)="onCloseSidebar()">
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <app-header (toggleSidebar)="onToggleSidebar()"></app-header>
+
+    <main class="flex-1 overflow-y-auto p-6 space-y-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900">Carga Masiva de PDFs</h1>
+          <p class="text-sm text-gray-500 mt-1">Genera el QR, pegalo en tu Excel o plantilla y luego sube el PDF final firmado.</p>
+          <div class="flex items-center gap-4 mt-2 text-xs text-gray-600">
+            <span><strong>{{ totalDrafts }}</strong> borradores</span>
+            <span class="text-green-600"><strong>{{ draftsWithPdf }}</strong> con PDF</span>
+            <span class="text-amber-600"><strong>{{ draftsWithoutPdf }}</strong> sin PDF</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button type="button" (click)="toggleCreateForm()"
+            class="flex items-center gap-2 h-11 px-4 rounded-lg border border-gray-300 bg-white text-sm font-semibold hover:bg-gray-50 transition-colors">
+            <span class="material-symbols-outlined">add</span>
+            <span>+ Documento Manual</span>
+          </button>
+
+          <button type="button" (click)="openBulkModal()"
+            class="flex items-center gap-2 h-11 px-5 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors">
+            <span class="material-symbols-outlined">playlist_add</span>
+            <span>+ Mas codigos</span>
+          </button>
+
+          <button type="button" (click)="saveAllDrafts()" [disabled]="savingAll || totalDrafts === 0"
+            class="flex items-center gap-2 h-11 px-5 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            <span *ngIf="savingAll" class="material-symbols-outlined animate-spin text-sm">sync</span>
+            <span class="material-symbols-outlined" *ngIf="!savingAll">save</span>
+            <span>{{ savingAll ? 'Guardando...' : 'Guardar Todo' }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="showCreateForm" class="bg-white rounded-xl shadow-sm p-6 border-l-4 border-primary">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Crear Documento Manual</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Codigo</label>
+            <div class="flex rounded-lg border border-gray-300 overflow-hidden focus-within:ring-2 focus-within:ring-primary/50">
+              <span class="h-11 px-3 flex items-center bg-gray-100 text-sm font-semibold text-gray-600 border-r border-gray-300">IN-</span>
+              <input type="text" [(ngModel)]="newCode" (blur)="validateCode()"
+                class="flex-1 h-11 px-3 text-sm focus:outline-none"
+                placeholder="N-001-26-CO12">
+            </div>
+            <p *ngIf="codeError" class="text-xs text-red-500 mt-1">{{ codeError }}</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de Emision</label>
+            <input type="date" [(ngModel)]="newFechaEmision"
+              class="w-full rounded-lg border border-gray-300 h-11 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+          </div>
+
+          <div class="flex gap-2">
+            <button type="button" (click)="createRow()" [disabled]="creatingRow || !!codeError"
+              class="flex items-center gap-2 h-11 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              <span *ngIf="creatingRow" class="material-symbols-outlined animate-spin text-sm">sync</span>
+              <span>{{ creatingRow ? 'Creando...' : 'Crear' }}</span>
+            </button>
+
+            <button type="button" (click)="showCreateForm = false"
+              class="h-11 px-4 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6">
+          <div class="relative w-full md:w-72">
+            <input [(ngModel)]="searchTerm" (keyup)="onSearch()"
+              class="w-full rounded-lg border border-gray-300 bg-gray-50 h-11 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder="Buscar en borradores..." type="text" />
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+          </div>
+
+          <span class="text-sm text-gray-500">{{ filteredDocuments.length }} borrador(es) mostrado(s)</span>
+        </div>
+
+        <div class="relative overflow-x-auto min-h-[300px]">
+          <div *ngIf="loading"
+            class="absolute inset-0 bg-white/80 z-10 flex items-center justify-center backdrop-blur-[1px]">
+            <div class="flex flex-col items-center gap-3">
+              <span class="material-symbols-outlined text-4xl text-primary animate-spin">sync</span>
+              <span class="text-sm font-medium text-gray-500">Cargando borradores...</span>
+            </div>
+          </div>
+
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs text-gray-500 uppercase bg-gray-50">
+              <tr>
+                <th class="p-4 rounded-l-lg" scope="col">Tipo Doc.</th>
+                <th class="p-4" scope="col">Codigo</th>
+                <th class="p-4" scope="col">Nombre Archivo</th>
+                <th class="p-4" scope="col">Fecha Emision</th>
+                <th class="p-4" scope="col">Tamano</th>
+                <th class="p-4" scope="col">Acciones QR</th>
+                <th class="p-4 rounded-r-lg" scope="col">Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr *ngIf="!loading && filteredDocuments.length === 0 && totalDrafts === 0">
+                <td colspan="7" class="p-8 text-center text-gray-500">
+                  No hay borradores aun.
+                  <button type="button" (click)="openBulkModal()" class="text-primary hover:underline font-medium ml-1">
+                    Carga tus primeros PDFs
+                  </button>
+                </td>
+              </tr>
+
+              <tr *ngIf="!loading && filteredDocuments.length === 0 && totalDrafts > 0">
+                <td colspan="7" class="p-8 text-center text-gray-500">
+                  No se encontraron borradores con ese criterio de busqueda.
+                </td>
+              </tr>
+
+              <tr *ngFor="let doc of filteredDocuments" class="border-b transition-colors"
+                [ngClass]="hasGeneratedQr(doc)
+                  ? 'border-cyan-200 bg-cyan-50/70 hover:bg-cyan-100'
+                  : 'border-gray-200 bg-white hover:bg-slate-50'">
+                <td class="p-4">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    IN
+                  </span>
+                </td>
+
+                <td class="p-4 font-semibold text-gray-900">{{ getCodeDisplay(doc.folder_name) }}</td>
+
+                <td class="p-4 text-gray-500">
+                  <span *ngIf="doc.original_filename">{{ doc.original_filename }}</span>
+                  <span *ngIf="!doc.original_filename" class="text-gray-400 italic">Sin PDF</span>
+                  <p *ngIf="requiresPdfReselection(doc)" class="text-xs text-amber-600 mt-1">
+                    PDF importado sin archivo recuperado. Reimportalo desde el modal.
+                  </p>
+                </td>
+
+                <td class="p-4 text-gray-500">{{ formatDate(doc.fecha_emision) }}</td>
+                <td class="p-4 text-gray-500">{{ formatFileSize(doc.file_size) }}</td>
+
+                <td class="p-4">
+                  <div class="flex flex-col gap-2 min-w-[170px]">
+                    <div class="flex items-center gap-2">
+                      <button type="button" (click)="openInjectModal(doc)"
+                        class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold shadow-sm transition-colors"
+                        [ngClass]="hasImportedPdf(doc)
+                          ? 'bg-cyan-600 border-cyan-600 text-white hover:bg-cyan-700 shadow-cyan-100'
+                          : 'bg-sky-600 border-sky-600 text-white hover:bg-sky-700 shadow-sky-100'">
+                        <span class="material-symbols-outlined text-sm">upload_file</span>
+                        {{ getPdfActionLabel(doc) }}
+                      </button>
+
+                      <button type="button" (click)="copyDraftLink(doc)"
+                        [disabled]="copyingLinkDraftId === doc.id"
+                        class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        [ngClass]="hasGeneratedQr(doc)
+                          ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100'
+                          : 'bg-slate-200 border-slate-300 text-slate-700 hover:bg-slate-300'">
+                        <span *ngIf="copyingLinkDraftId === doc.id" class="material-symbols-outlined text-sm animate-spin">sync</span>
+                        <span *ngIf="copyingLinkDraftId !== doc.id" class="material-symbols-outlined text-sm">link</span>
+                        {{ hasGeneratedQr(doc) ? 'Link' : 'Generar' }}
+                      </button>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <button type="button" (click)="copyDraftQr(doc)"
+                        [disabled]="copyingQrDraftId === doc.id"
+                        class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        [ngClass]="hasGeneratedQr(doc)
+                          ? 'bg-amber-500 text-white border border-amber-500 hover:bg-amber-600 shadow-amber-100'
+                          : 'bg-orange-500 text-white border border-orange-500 hover:bg-orange-600 shadow-orange-100'">
+                        <span *ngIf="copyingQrDraftId === doc.id" class="material-symbols-outlined text-sm animate-spin">sync</span>
+                        <span *ngIf="copyingQrDraftId !== doc.id" class="material-symbols-outlined text-sm">content_copy</span>
+                        {{ getQrActionLabel(doc) }}
+                      </button>
+                    </div>
+
+                    <span class="inline-flex items-center w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                      [ngClass]="hasGeneratedQr(doc)
+                        ? 'bg-cyan-100 text-cyan-700'
+                        : 'bg-slate-100 text-slate-600'">
+                      {{ getQrStatusLabel(doc) }}
+                    </span>
+
+                    <span class="inline-flex items-center w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                      [ngClass]="hasImportedPdf(doc)
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-700'">
+                      {{ hasImportedPdf(doc) ? 'PDF cargado' : 'Pendiente de PDF' }}
+                    </span>
+                  </div>
+                </td>
+
+                <td class="p-4">
+                  <div class="flex items-center gap-1">
+                    <button type="button" (click)="removeDraft(doc)"
+                      [disabled]="removingDraftId === doc.id"
+                      class="p-1.5 rounded-md hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Eliminar borrador">
+                      <span *ngIf="removingDraftId === doc.id" class="material-symbols-outlined text-red-600 text-lg animate-spin">sync</span>
+                      <span *ngIf="removingDraftId !== doc.id" class="material-symbols-outlined text-red-600 text-lg">delete</span>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div *ngIf="showBulkModal" class="fixed inset-0 z-50 flex items-center justify-center">
+    <div class="fixed inset-0 bg-black/50" (click)="closeBulkModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 p-6 md:p-8 z-10 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-lg font-bold text-gray-900">Carga Masiva de Borradores</h2>
+        <button type="button" (click)="closeBulkModal()" class="p-1 hover:bg-gray-100 rounded-full">
+          <span class="material-symbols-outlined text-gray-500">close</span>
+        </button>
+      </div>
+
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de Emision (se aplica a todos)</label>
+        <input type="date" [(ngModel)]="bulkFechaEmision"
+          class="w-full rounded-lg border border-gray-300 h-11 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+      </div>
+
+      <div class="mb-5">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <label class="block text-sm font-medium text-gray-700">Seleccionar PDFs (opcional)</label>
+          <button type="button" (click)="addBulkCodeRow()"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors">
+            <span class="material-symbols-outlined text-sm">add</span>
+            Agregar codigo
+          </button>
+        </div>
+        <div class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
+          (click)="bulkFileInput.click()">
+          <span class="material-symbols-outlined text-4xl text-gray-400 mb-2">cloud_upload</span>
+          <p class="text-sm text-gray-600">Haz clic para seleccionar archivos PDF si ya los tienes firmados</p>
+          <p class="text-xs text-gray-400 mt-1">Tambien puedes crear borradores solo con codigo y subir el PDF despues</p>
+        </div>
+        <input #bulkFileInput type="file" multiple accept=".pdf" class="hidden"
+          (change)="onBulkFilesSelected($event)">
+      </div>
+
+      <div *ngIf="bulkEntries.length > 0" class="mb-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-gray-700">{{ bulkEntries.length }} registro(s) - Asigna codigos</span>
+          <button type="button" (click)="resetBulkEntries()" class="text-xs text-red-500 hover:underline">
+            Limpiar todos
+          </button>
+        </div>
+
+        <div class="max-h-96 overflow-y-auto space-y-3 border border-gray-200 rounded-lg p-3">
+          <div *ngFor="let entry of bulkEntries; let i = index"
+            class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] gap-3 p-4 rounded-lg bg-gray-50 border border-gray-200">
+            <div class="flex items-center justify-between gap-3 min-w-0">
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="material-symbols-outlined text-sm shrink-0"
+                  [ngClass]="entry.file ? 'text-red-500' : 'text-slate-400'">
+                  {{ entry.file ? 'picture_as_pdf' : 'description' }}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm text-gray-700 truncate font-medium">{{ entry.label }}</p>
+                  <p class="text-xs text-gray-400 mt-1">
+                    {{ entry.file ? formatFileSize(entry.file.size) : 'Borrador sin PDF por ahora' }}
+                  </p>
+                </div>
+              </div>
+
+              <button type="button" (click)="removeBulkEntry(i)"
+                class="p-1 hover:bg-red-100 rounded shrink-0">
+                <span class="material-symbols-outlined text-red-400 text-sm">close</span>
+              </button>
+            </div>
+
+            <div class="flex items-start gap-2">
+              <div class="flex-1">
+                <label class="block text-xs font-semibold text-gray-600 mb-2">Codigo</label>
+                <div class="flex rounded-lg border h-9 overflow-hidden focus-within:ring-2 focus-within:ring-primary/50"
+                  [ngClass]="{
+                    'border-red-300 bg-red-50': entry.error,
+                    'border-green-300 bg-green-50': entry.code && !entry.error,
+                    'border-gray-300': !entry.code || entry.error
+                  }">
+                  <span class="px-3 flex items-center bg-gray-100 text-xs font-semibold text-gray-600 border-r border-gray-300">IN-</span>
+                  <input type="text"
+                    [(ngModel)]="entry.code"
+                    (input)="validateBulkCodeLocal(entry)"
+                    (blur)="validateBulkCode(entry)"
+                    placeholder="N-001-26-CO12"
+                    class="flex-1 h-full px-3 text-sm bg-transparent focus:outline-none">
+                </div>
+
+                <p *ngIf="entry.error" class="text-xs text-red-500 mt-1">
+                  {{ entry.error }}
+                </p>
+
+                <p *ngIf="entry.code && !entry.error"
+                  class="text-xs text-green-600 mt-1">
+                  Codigo valido
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+        <button type="button" (click)="closeBulkModal()"
+          class="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 transition-colors">
+          Cancelar
+        </button>
+
+        <button type="button" (click)="executeBulkUpload()"
+          [disabled]="!canExecuteBulkUpload() || bulkUploading"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          <span *ngIf="bulkUploading" class="material-symbols-outlined text-sm animate-spin">sync</span>
+          <span *ngIf="!bulkUploading" class="material-symbols-outlined text-sm">add_circle</span>
+          <span>{{ bulkUploading ? 'Agregando borradores...' : 'Agregar ' + bulkEntries.length + ' Borrador(es)' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="showInjectModal" class="fixed inset-0 z-50 flex items-center justify-center">
+    <div class="fixed inset-0 bg-black/50" (click)="closeInjectModal()"></div>
+    <div class="relative z-10 mx-4 flex max-h-[92vh] w-[min(96vw,1080px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 md:px-6">
+        <h2 class="text-lg font-bold text-gray-900">Editar datos y PDF final</h2>
+        <button type="button" (click)="closeInjectModal()" class="p-1 hover:bg-gray-100 rounded-full">
+          <span class="material-symbols-outlined text-gray-500">close</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 py-5 md:px-6">
+        <div class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <div class="space-y-5">
+            <div *ngIf="injectingDoc" class="bg-gray-50 rounded-lg p-4 space-y-2">
+              <p class="text-sm text-gray-600">Documento actual: <strong>{{ getCodeDisplay(injectingDoc.folder_name) }}</strong></p>
+
+              <p *ngIf="injectingDoc.original_filename" class="text-xs text-gray-500">
+                PDF actual: {{ injectingDoc.original_filename }} ({{ formatFileSize(injectingDoc.file_size) }})
+              </p>
+
+              <p *ngIf="requiresPdfReselection(injectingDoc)" class="text-xs text-amber-600">
+                Este borrador viene de una sesion anterior y necesita que vuelvas a seleccionar el PDF antes de guardar.
+              </p>
+            </div>
+
+            <div class="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-sm font-bold text-cyan-900">Paso recomendado</h3>
+                  <p class="text-xs text-cyan-800 mt-1">
+                    1. Copia o descarga el QR. 2. Pegalo en el Excel o plantilla. 3. Exporta y firma el PDF final. 4. Sube ese PDF aqui.
+                  </p>
+                </div>
+                <span *ngIf="injectPreparing" class="material-symbols-outlined text-cyan-700 animate-spin">sync</span>
+              </div>
+
+              <div *ngIf="injectingDoc && !injectPreparing" class="mt-4">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center">
+                  <div class="h-28 w-28 shrink-0 rounded-lg bg-white border border-cyan-200 flex items-center justify-center overflow-hidden">
+                    <img *ngIf="injectingDoc.qr_image_url"
+                      [src]="getQrPreviewUrl(injectingDoc)"
+                      [alt]="'QR ' + injectingDoc.qr_id"
+                      class="w-full h-full object-contain" />
+                    <span *ngIf="!injectingDoc.qr_image_url" class="text-[11px] text-slate-500 text-center px-2">QR no disponible</span>
+                  </div>
+
+                  <div class="flex-1 space-y-2">
+                    <p class="text-xs text-cyan-900">
+                      <strong>QR:</strong> {{ injectingDoc.qr_id || 'Pendiente de generar' }}
+                    </p>
+                    <div class="flex flex-wrap gap-2">
+                      <button type="button" (click)="copyInjectModalQr()"
+                        [disabled]="!injectingDoc.qr_image_url"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span class="material-symbols-outlined text-sm">content_copy</span>
+                        Copiar QR
+                      </button>
+                      <button type="button" (click)="downloadInjectModalQr('hd')"
+                        [disabled]="!injectingDoc.qr_image_url"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-cyan-300 bg-white px-3 py-2 text-xs font-semibold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span class="material-symbols-outlined text-sm">download</span>
+                        Descargar HD
+                      </button>
+                      <button type="button" (click)="copyDraftLink(injectingDoc)"
+                        [disabled]="copyingLinkDraftId === injectingDoc.id"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-cyan-300 bg-white px-3 py-2 text-xs font-semibold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span *ngIf="copyingLinkDraftId === injectingDoc.id" class="material-symbols-outlined text-sm animate-spin">sync</span>
+                        <span *ngIf="copyingLinkDraftId !== injectingDoc.id" class="material-symbols-outlined text-sm">link</span>
+                        Copiar link
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-5">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Codigo</label>
+                <div class="flex rounded-lg border border-gray-300 overflow-hidden focus-within:ring-2 focus-within:ring-primary/50">
+                  <span class="h-11 px-3 flex items-center bg-gray-100 text-sm font-semibold text-gray-600 border-r border-gray-300">IN-</span>
+                  <input type="text" [(ngModel)]="injectCode" (input)="validateInjectCodeLocal()" (blur)="validateInjectCode()"
+                    class="flex-1 h-11 px-3 text-sm focus:outline-none"
+                    placeholder="N-001-26-CO12">
+                </div>
+                <p *ngIf="injectCodeError" class="text-xs text-red-500 mt-1">{{ injectCodeError }}</p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de Emision</label>
+                <input type="date" [(ngModel)]="injectFechaEmision"
+                  class="w-full rounded-lg border border-gray-300 h-11 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">PDF final firmado</label>
+              <div
+                class="border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer min-h-[220px] flex flex-col items-center justify-center"
+                [ngClass]="{
+                  'border-primary bg-primary/5': injectDragOver,
+                  'border-gray-300 hover:border-primary/50': !injectDragOver
+                }"
+                (dragover)="onInjectDragOver($event)"
+                (dragleave)="onInjectDragLeave($event)"
+                (drop)="onInjectDrop($event)"
+                (click)="injectFileInput.click()">
+                <span *ngIf="!injectFile" class="material-symbols-outlined text-4xl text-gray-400 mb-2">upload_file</span>
+                <span *ngIf="injectFile" class="material-symbols-outlined text-4xl text-green-500 mb-2">check_circle</span>
+
+                <p *ngIf="!injectFile && injectingDoc && hasImportedPdf(injectingDoc) && !requiresPdfReselection(injectingDoc)"
+                  class="text-sm text-gray-600">
+                  El PDF final ya esta cargado. Arrastra otro aqui o haz clic si deseas reemplazarlo.
+                </p>
+
+                <p *ngIf="!injectFile && injectingDoc && (!hasImportedPdf(injectingDoc) || requiresPdfReselection(injectingDoc))"
+                  class="text-sm text-gray-600">
+                  Arrastra aqui el PDF final firmado que ya incluye el QR, o haz clic para seleccionarlo.
+                </p>
+
+                <p *ngIf="injectFile" class="text-sm text-green-700 font-medium">{{ injectFile.name }}</p>
+                <p *ngIf="injectFile" class="text-xs text-gray-400 mt-1">{{ formatFileSize(injectFile.size) }}</p>
+              </div>
+
+              <input #injectFileInput type="file" accept=".pdf" class="hidden"
+                (change)="onInjectFileSelected($event)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 border-t border-gray-200 px-5 py-4 md:px-6">
+        <button type="button" (click)="closeInjectModal()"
+          class="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50 transition-colors">
+          Cancelar
+        </button>
+
+        <button type="button" (click)="executeInject()"
+          [disabled]="!!injectCodeError || !injectFechaEmision || injectSaving"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+          <span *ngIf="injectSaving" class="material-symbols-outlined text-sm animate-spin">sync</span>
+          <span *ngIf="!injectSaving" class="material-symbols-outlined text-sm">save</span>
+          <span>{{ injectSaving ? 'Guardando...' : 'Guardar datos y PDF' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="confirmationModal.open" class="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4" (click)="closeConfirmationModal()">
+    <div class="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200" (click)="$event.stopPropagation()">
+      <div class="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_45%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] px-6 py-5">
+        <div class="flex items-start gap-4">
+          <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl"
+            [ngClass]="confirmationModal.confirmTone === 'danger' ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'">
+            <span class="material-symbols-outlined text-2xl">
+              {{ confirmationModal.confirmTone === 'danger' ? 'delete_forever' : 'priority_high' }}
+            </span>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-xl font-bold text-slate-900">{{ confirmationModal.title }}</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-600">{{ confirmationModal.message }}</p>
+          </div>
+          <button type="button" (click)="closeConfirmationModal()" class="rounded-full p-2 text-slate-400 transition-colors hover:bg-white hover:text-slate-600">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex flex-col-reverse gap-3 bg-white px-6 py-5 sm:flex-row sm:justify-end">
+        <button type="button" (click)="closeConfirmationModal()"
+          class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50">
+          Cancelar
+        </button>
+        <button type="button" (click)="confirmModalAction()"
+          class="inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white transition-colors"
+          [ngClass]="confirmationModal.confirmTone === 'danger'
+            ? 'bg-red-600 hover:bg-red-700'
+            : 'bg-primary hover:bg-primary/90'">
+          {{ confirmationModal.confirmLabel }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -16,12 +16,12 @@ return new class extends Migration
     {
         Schema::table('qr_files', function (Blueprint $table) {
             // Verificar si ya existe un índice único antes de crearlo
-            $indexes = $this->getIndexMetadata('qr_files', 'qr_files_folder_name_unique');
+            $indexes = DB::select("SHOW INDEX FROM qr_files WHERE Key_name = 'qr_files_folder_name_unique'");
             
             // Si no existe el índice único, crearlo
             if (empty($indexes)) {
                 // Verificar si existe el índice no único antes de eliminarlo
-                $nonUniqueIndexes = $this->getIndexMetadata('qr_files', 'qr_files_folder_name_index');
+                $nonUniqueIndexes = DB::select("SHOW INDEX FROM qr_files WHERE Key_name = 'qr_files_folder_name_index'");
                 if (!empty($nonUniqueIndexes)) {
                     try {
                         $table->dropIndex('qr_files_folder_name_index');
@@ -44,7 +44,7 @@ return new class extends Migration
     {
         Schema::table('qr_files', function (Blueprint $table) {
             // Verificar si existe el índice único antes de eliminarlo
-            $indexes = $this->getIndexMetadata('qr_files', 'qr_files_folder_name_unique');
+            $indexes = DB::select("SHOW INDEX FROM qr_files WHERE Key_name = 'qr_files_folder_name_unique'");
             
             if (!empty($indexes)) {
                 // Eliminar índice único
@@ -58,23 +58,5 @@ return new class extends Migration
                 // Ignorar si ya existe
             }
         });
-    }
-
-    /**
-     * Obtener información de índices compatible con MySQL y SQLite
-     */
-    private function getIndexMetadata(string $table, string $indexName): array
-    {
-        $driver = Schema::getConnection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            $indexes = DB::select("PRAGMA index_list('{$table}')") ?: [];
-
-            return array_values(array_filter($indexes, function (object $index) use ($indexName) {
-                return ($index->name ?? null) === $indexName;
-            }));
-        }
-
-        return DB::select("SHOW INDEX FROM {$table} WHERE Key_name = '{$indexName}'");
     }
 };
